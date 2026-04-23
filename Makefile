@@ -30,6 +30,7 @@ audit: ## Run pip-audit security check
 	$(PYTHON) -m pip_audit
 
 run: ## Start FastAPI server (foreground)
+	@set -a && [ -f .env ] && . ./.env; set +a; \
 	$(PYTHON) -m uvicorn src.serving.app:app --host 127.0.0.1 --port 8000 --log-level info
 
 serve-install: ## Install launchd plist for macOS background autostart

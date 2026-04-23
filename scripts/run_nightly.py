@@ -23,13 +23,19 @@ _STATUS_PATH = Path("data/monitoring/status.json")
 _RETRAIN_CADENCE_DAYS = 21
 
 
+def _default_start_date() -> date:
+    from datetime import timedelta
+    return date.today() - timedelta(days=730)  # 2 years — Polygon free-tier limit
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Nightly batch pipeline")
     parser.add_argument(
         "--start-date",
-        required=True,
+        required=False,
+        default=None,
         type=date.fromisoformat,
-        help="OHLCV fetch start date in YYYY-MM-DD format",
+        help="OHLCV fetch start date in YYYY-MM-DD format (default: 2 years ago)",
     )
     parser.add_argument(
         "--run-date",
@@ -68,6 +74,7 @@ def _should_retrain(run_date: date, force: bool) -> bool:
 def main() -> None:
     args = _parse_args()
     run_date = args.run_date
+    start_date = args.start_date or _default_start_date()
 
     polygon_key = os.environ.get("POLYGON_API_KEY", "")
     finnhub_key = os.environ.get("FINNHUB_API_KEY", "")
@@ -76,11 +83,11 @@ def main() -> None:
         logger.critical("POLYGON_API_KEY and FINNHUB_API_KEY must be set in environment")
         sys.exit(1)
 
-    logger.info("=== nightly run: %s (start_date=%s) ===", run_date, args.start_date)
+    logger.info("=== nightly run: %s (start_date=%s) ===", run_date, start_date)
 
     # 1. Ingestion
     from src.ingestion.pipeline import IngestionPipeline
-    IngestionPipeline(polygon_key, finnhub_key).run(run_date, args.start_date)
+    IngestionPipeline(polygon_key, finnhub_key).run(run_date, start_date)
     logger.info("ingestion complete")
 
     # 2. Preprocessing

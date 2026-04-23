@@ -44,8 +44,9 @@ serve-uninstall: ## Unload and remove launchd plist
 train: ## Run training harness
 	$(PYTHON) scripts/run_nightly.py --train-only
 
-nightly: ## Run full nightly batch pipeline
-	$(PYTHON) scripts/run_nightly.py
+nightly: ## Run full nightly batch pipeline (optional: START_DATE=YYYY-MM-DD)
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	$(PYTHON) scripts/run_nightly.py $(if $(START_DATE),--start-date $(START_DATE),)
 
 notebook: ## Launch Jupyter for EDA
 	$(PYTHON) -m jupyter lab notebooks/

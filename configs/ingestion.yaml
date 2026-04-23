@@ -1,9 +1,9 @@
 polygon:
   calls_per_minute: 100   # Basic plan; set to 5 for free tier
-  universe_size: 50
+  universe_size: 30
 
-finnhub:
-  calls_per_minute: 60    # unchanged across tiers
+alphavantage:
+  calls_per_minute: 75    # Premium plan; set to 5 for free tier (25 calls/day)
 
 retry:
   attempts: 3

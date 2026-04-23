@@ -8,7 +8,7 @@ import pandas_market_calendars as mcal
 import yaml
 
 from src.ingestion.alerts import AlertWriter
-from src.ingestion.clients.finnhub import FinnhubClient
+from src.ingestion.clients.alphavantage import AlphaVantageClient
 from src.ingestion.clients.polygon import PolygonClient
 from src.ingestion.models.ohlcv import OHLCVRecord
 from src.ingestion.models.sentiment import SentimentRecord
@@ -27,7 +27,7 @@ def _load_config(config_path: Path = _CONFIG_PATH) -> dict:
             return yaml.safe_load(fh)
     return {
         "polygon": {"calls_per_minute": 5, "universe_size": 50},
-        "finnhub": {"calls_per_minute": 60},
+        "alphavantage": {"calls_per_minute": 5},
     }
 
 
@@ -41,16 +41,16 @@ class IngestionPipeline:
     def __init__(
         self,
         polygon_api_key: str,
-        finnhub_api_key: str,
+        alphavantage_api_key: str,
         raw_dir: Path = _RAW_DIR,
         config_path: Path = _CONFIG_PATH,
     ) -> None:
         cfg = _load_config(config_path)
         polygon_limiter = RateLimiter(cfg["polygon"]["calls_per_minute"])
-        finnhub_limiter = RateLimiter(cfg["finnhub"]["calls_per_minute"])
+        av_limiter = RateLimiter(cfg["alphavantage"]["calls_per_minute"])
         self._universe_size: int = cfg["polygon"].get("universe_size", 50)
         self._polygon = PolygonClient(polygon_api_key, polygon_limiter)
-        self._finnhub = FinnhubClient(finnhub_api_key, finnhub_limiter)
+        self._alphavantage = AlphaVantageClient(alphavantage_api_key, av_limiter)
         self._raw_dir = raw_dir
         self._alert_writer = AlertWriter(raw_dir / "alerts")
         self._calendar = mcal.get_calendar("NYSE")
@@ -67,6 +67,9 @@ class IngestionPipeline:
 
         universe = self._resolve_universe(run_date)
         logger.info("universe: %d tickers", len(universe))
+        universe_dest = self._raw_dir / "universe" / f"{run_date}.csv"
+        if not universe_dest.exists():
+            write_csv(universe_dest, [{"ticker": t} for t in universe])
 
         ohlcv_success: list[str] = []
         ohlcv_failed: list[str] = []
@@ -122,10 +125,27 @@ class IngestionPipeline:
 
     def _resolve_universe(self, run_date: date) -> list[str]:
         try:
-            return self._polygon.resolve_universe(run_date, self._universe_size)
+            universe = self._polygon.resolve_universe(run_date, self._universe_size)
+            if not universe:
+                # Grouped daily data isn't published until ~15 min after market close.
+                # Fall back to the previous trading day so nightly runs aren't blocked.
+                prev = self._prev_trading_day(run_date)
+                logger.warning(
+                    "no data for %s (market may still be open); falling back to %s",
+                    run_date, prev,
+                )
+                universe = self._polygon.resolve_universe(prev, self._universe_size)
+            return universe
         except Exception as exc:
             logger.critical("universe resolution failed: %s", exc)
             raise RuntimeError(f"universe resolution failed for {run_date}") from exc
+
+    def _prev_trading_day(self, d: date) -> date:
+        from datetime import timedelta
+        schedule = self._calendar.schedule(
+            start_date=str(d - timedelta(days=10)), end_date=str(d - timedelta(days=1))
+        )
+        return schedule.index[-1].date()
 
     def _ingest_ohlcv(self, ticker: str, run_date: date, start_date: date) -> bool:
         dest = self._raw_dir / "ohlcv" / ticker / f"{run_date}.csv"
@@ -147,7 +167,7 @@ class IngestionPipeline:
             logger.debug("sentiment already exists for %s %s, skipping", ticker, run_date)
             return "ok"
         try:
-            record = self._finnhub.fetch_sentiment(ticker, run_date)
+            record = self._alphavantage.fetch_sentiment(ticker, run_date)
             row = self._sentiment_to_dict(record)
             write_csv(dest, [row])
             all_null = all(

@@ -80,17 +80,17 @@ def main() -> None:
     start_date = args.start_date or _default_start_date()
 
     polygon_key = os.environ.get("POLYGON_API_KEY", "")
-    finnhub_key = os.environ.get("FINNHUB_API_KEY", "")
+    alphavantage_key = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 
-    if not polygon_key or not finnhub_key:
-        logger.critical("POLYGON_API_KEY and FINNHUB_API_KEY must be set in environment")
+    if not polygon_key or not alphavantage_key:
+        logger.critical("POLYGON_API_KEY and ALPHA_VANTAGE_API_KEY must be set in environment")
         sys.exit(1)
 
     logger.info("=== nightly run: %s (start_date=%s) ===", run_date, start_date)
 
     # 1. Ingestion
     from src.ingestion.pipeline import IngestionPipeline
-    IngestionPipeline(polygon_key, finnhub_key).run(run_date, start_date)
+    IngestionPipeline(polygon_key, alphavantage_key).run(run_date, start_date)
     logger.info("ingestion complete")
 
     # 2. Preprocessing
@@ -148,8 +148,11 @@ def main() -> None:
     from scripts.prediction_client import PredictionClient
     api_token = os.environ.get("API_TOKEN", "")
     if api_token:
-        PredictionClient().run(run_date)
-        logger.info("prediction complete")
+        try:
+            PredictionClient().run(run_date)
+            logger.info("prediction complete")
+        except Exception as exc:
+            logger.warning("prediction client failed (server may not be running yet): %s", exc)
     else:
         logger.warning("API_TOKEN not set — skipping prediction client")
 

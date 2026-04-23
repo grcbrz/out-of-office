@@ -13,7 +13,6 @@ from src.ingestion.rate_limiter import RateLimiter
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.massive.com"  # formerly api.polygon.io (rebranded Oct 2025)
-_COMMON_STOCK_TYPES = {"CS"}  # common stock only
 
 
 class PolygonClient:
@@ -45,15 +44,33 @@ class PolygonClient:
         return universe
 
     def _is_common_stock(self, result: dict[str, Any]) -> bool:
+        # The grouped daily endpoint does not include a "type" field — only "otc".
+        # Non-OTC is the best available proxy for exchange-listed equities from this endpoint.
         return result.get("otc") is False or result.get("otc") is None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=4))
     def _fetch_grouped_daily(self, trade_date: date) -> dict[str, Any]:
         self._rate_limiter.acquire()
         url = f"/v2/aggs/grouped/locale/us/market/stocks/{trade_date}"
-        resp = self._http.get(url, params={"apiKey": self._api_key, "adjusted": "true"})
-        resp.raise_for_status()
-        return resp.json()
+        all_results: list[dict[str, Any]] = []
+        params: dict[str, Any] = {"apiKey": self._api_key, "adjusted": "true"}
+        next_url: str | None = None
+
+        while True:
+            if next_url:
+                resp = self._http.get(next_url, params={"apiKey": self._api_key})
+            else:
+                resp = self._http.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("status") == "ERROR":
+                raise RuntimeError(f"Massive API error: {data.get('error')}")
+            all_results.extend(data.get("results") or [])
+            next_url = data.get("next_url")
+            if not next_url:
+                break
+
+        return {"results": all_results}
 
     # ------------------------------------------------------------------
     # OHLCV per ticker
@@ -89,14 +106,27 @@ class PolygonClient:
     ) -> dict[str, Any]:
         self._rate_limiter.acquire()
         url = f"/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}"
-        resp = self._http.get(
-            url,
-            params={
-                "apiKey": self._api_key,
-                "adjusted": "true",
-                "sort": "asc",
-                "limit": 730,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
+        all_results: list[dict[str, Any]] = []
+        params: dict[str, Any] = {
+            "apiKey": self._api_key,
+            "adjusted": "true",
+            "sort": "asc",
+            "limit": 730,
+        }
+        next_url: str | None = None
+
+        while True:
+            if next_url:
+                resp = self._http.get(next_url, params={"apiKey": self._api_key})
+            else:
+                resp = self._http.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("status") == "ERROR":
+                raise RuntimeError(f"Massive API error for {ticker}: {data.get('error')}")
+            all_results.extend(data.get("results") or [])
+            next_url = data.get("next_url")
+            if not next_url:
+                break
+
+        return {"results": all_results}

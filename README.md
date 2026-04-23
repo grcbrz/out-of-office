@@ -1,6 +1,6 @@
 # OOO - learning models, buying time
 
-Private-use nightly stock recommender that produces **BUY / HOLD / SELL** signals for the top 50 US equities by volume. Signals are generated after market close and consumed before open.
+Private-use nightly stock recommender that produces **BUY / HOLD / SELL** signals for the top 30 US equities by volume. Signals are generated after market close and consumed before open.
 
 ---
 
@@ -8,7 +8,7 @@ Private-use nightly stock recommender that produces **BUY / HOLD / SELL** signal
 
 ```
 scripts/run_nightly.py
-├── Ingestion        — OHLCV + sentiment via Polygon.io & Finnhub
+├── Ingestion        — OHLCV via Massive (Polygon.io) + sentiment via Alpha Vantage
 ├── Preprocessing    — cleaning, imputation, outlier detection
 ├── Feature Eng.     — log returns, MACD, OBV, VWAP, lags, seasonality
 ├── Monitoring       — feature drift (KS+PSI), prediction drift, hit-rate degradation
@@ -25,8 +25,8 @@ The FastAPI server runs as a persistent background service (launchd). The nightl
 
 - Python 3.11+
 - [pyenv](https://github.com/pyenv/pyenv) (recommended; `.python-version` pins 3.12.9)
-- A [Polygon.io](https://polygon.io) free-tier API key
-- A [Finnhub](https://finnhub.io) free-tier API key
+- A [Massive](https://massive.com) (formerly Polygon.io) Basic-plan API key
+- An [Alpha Vantage](https://www.alphavantage.co) API key (premium recommended; free tier allows only 25 calls/day)
 - A bearer token of at least 32 characters for the API (`API_TOKEN`)
 
 ---
@@ -48,8 +48,8 @@ make install
 # 4. Configure environment variables
 cp .env.example .env
 # Edit .env and fill in:
-#   POLYGON_API_KEY=<your key>
-#   FINNHUB_API_KEY=<your key>
+#   POLYGON_API_KEY=<your Massive key>
+#   ALPHA_VANTAGE_API_KEY=<your Alpha Vantage key>
 #   API_TOKEN=<random string, ≥32 chars>
 ```
 
@@ -62,6 +62,7 @@ cp .env.example .env
 ```bash
 make run
 # Server starts at http://127.0.0.1:8000
+# Returns 503 until a model artifact exists (run make nightly first)
 ```
 
 ### Install as a macOS background service (launchd)
@@ -80,8 +81,10 @@ make serve-uninstall   # Remove the service
 ```bash
 make nightly
 # Or with an explicit start date:
-.venv/bin/python scripts/run_nightly.py --start-date 2026-04-24
+.venv/bin/python scripts/run_nightly.py --start-date 2024-04-23
 ```
+
+The nightly pipeline should be run **after market close** (US Eastern). Grouped daily data from Massive is typically published 15–30 minutes after 4 PM ET. If run earlier, the pipeline automatically falls back to the previous trading day's universe.
 
 ---
 
@@ -124,14 +127,14 @@ curl -X POST http://127.0.0.1:8000/predict \
 }
 ```
 
-Omit `tickers` to get signals for the full 50-ticker universe. Omit `predict_date` to default to today.
+Omit `tickers` to get signals for the full 30-ticker universe. Omit `predict_date` to default to today.
 
 ---
 
 ## Development
 
 ```bash
-make test        # Run full test suite (203 tests)
+make test        # Run full test suite
 make coverage    # Tests + coverage report (target ≥85%)
 make lint        # ruff + mypy
 make format      # black
@@ -143,7 +146,7 @@ make notebook    # Launch Jupyter for EDA
 
 ```
 src/
-├── ingestion/      — Polygon.io + Finnhub clients, rate limiter, pipeline
+├── ingestion/      — Massive + Alpha Vantage clients, rate limiter, pipeline
 ├── preprocessing/  — Imputation, outlier detection, normalisation, merger
 ├── features/       — Returns, trend, volume, lags, seasonality, target label
 ├── models/         — Walk-forward harness, N-HiTS/PatchTST/Autoformer wrappers
@@ -168,12 +171,22 @@ reports/            — Evaluation and monitoring reports
 
 ## Data sources
 
-| Source | Data | Rate limit |
+| Source | Data | Plan |
 |---|---|---|
-| [Polygon.io](https://polygon.io/docs/stocks) free tier | OHLCV, universe resolution | 5 calls/min |
-| [Finnhub](https://finnhub.io/docs/api) free tier | Pre-computed news sentiment | 60 calls/min |
+| [Massive](https://massive.com) (formerly Polygon.io) | OHLCV, universe resolution (top 30 by volume) | Basic (100 calls/min) |
+| [Alpha Vantage](https://www.alphavantage.co) | News sentiment — aggregated per-ticker score from article feed | Premium recommended |
+
+**Finnhub** was used for sentiment in early development but dropped — the `news-sentiment` endpoint requires a paid plan and is no longer part of this pipeline.
 
 Raw data is immutable and never overwritten. All pipeline steps are idempotent.
+
+### Sentiment aggregation
+
+Alpha Vantage returns a news article feed. For each ticker, the pipeline:
+1. Filters articles where the ticker's `relevance_score ≥ 0.1`
+2. Computes `bullish_percent` / `bearish_percent` from per-article sentiment labels
+3. Computes `company_news_score` as the mean `ticker_sentiment_score` (range −1 to +1)
+4. Records `buzz_weekly_average` as the count of relevant articles
 
 ---
 
@@ -222,4 +235,4 @@ Alert files written to `data/monitoring/alerts/{date}.json`. Retraining state pe
 
 ## Disclaimer
 
-This project is for private, non-commercial use only. It is not financial advice. Polygon.io and Finnhub free-tier terms of service permit personal use — verify on any tier upgrade.
+This project is for private, non-commercial use only. It is not financial advice. Verify the terms of service for Massive and Alpha Vantage on any plan changes.

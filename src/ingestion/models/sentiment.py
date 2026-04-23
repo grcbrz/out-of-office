@@ -27,9 +27,9 @@ class SentimentRecord(BaseModel):
             raise ValueError(f"percent value must be between 0.0 and 1.0, got {v}")
         return v
 
-    @field_validator("company_news_score", "buzz_weekly_average")
+    @field_validator("buzz_weekly_average")
     @classmethod
-    def score_non_negative(cls, v: float | None) -> float | None:
+    def buzz_non_negative(cls, v: float | None) -> float | None:
         if v is not None and v < 0:
-            raise ValueError(f"score must be >= 0, got {v}")
+            raise ValueError(f"buzz must be >= 0, got {v}")
         return v

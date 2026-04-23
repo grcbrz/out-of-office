@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from src.ingestion.models.sentiment import SentimentRecord
 from src.ingestion.rate_limiter import RateLimiter
@@ -34,7 +34,16 @@ class FinnhubClient:
         raw = self._fetch_raw_sentiment(ticker)
         return self._parse(ticker, fetch_date, raw)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=4))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=4),
+        retry=retry_if_exception(
+            lambda exc: not (
+                isinstance(exc, httpx.HTTPStatusError)
+                and exc.response.status_code in {401, 403}
+            )
+        ),
+    )
     def _fetch_raw_sentiment(self, ticker: str) -> dict[str, Any]:
         self._rate_limiter.acquire()
         resp = self._http.get(

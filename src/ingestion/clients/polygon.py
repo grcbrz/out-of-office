@@ -12,12 +12,12 @@ from src.ingestion.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://api.polygon.io"
+_BASE_URL = "https://api.massive.com"  # formerly api.polygon.io (rebranded Oct 2025)
 _COMMON_STOCK_TYPES = {"CS"}  # common stock only
 
 
 class PolygonClient:
-    """Fetches universe and OHLCV data from the Polygon.io REST API."""
+    """Fetches universe and OHLCV data from the Massive (formerly Polygon.io) REST API."""
 
     def __init__(self, api_key: str, rate_limiter: RateLimiter) -> None:
         self._api_key = api_key

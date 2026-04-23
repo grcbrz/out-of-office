@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from src.preprocessing.outlier import flag_outliers
 
@@ -31,7 +29,7 @@ def test_zscore_sufficient_history():
     df = _df_with_spike()
     result = flag_outliers(df)
     # Spike at index 64 should be flagged
-    assert result.loc[64, "close_outlier_flag"] == True
+    assert result.loc[64, "close_outlier_flag"] == True  # noqa: E712
 
 
 def test_zscore_insufficient_history():
@@ -44,7 +42,7 @@ def test_zscore_insufficient_history():
 def test_outlier_flag_set():
     df = _df_with_spike()
     result = flag_outliers(df)
-    assert result.loc[64, "close_outlier_flag"] == True
+    assert result.loc[64, "close_outlier_flag"] == True  # noqa: E712
 
 
 def test_outlier_record_not_removed():

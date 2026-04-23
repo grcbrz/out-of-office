@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.serving.metrics_store import MetricsStore
 
 
@@ -21,6 +23,3 @@ def test_signal_distribution():
     snap = store.snapshot()
     assert snap["signal_distribution"]["BUY"] == pytest.approx(0.3)
     assert snap["signal_distribution"]["HOLD"] == pytest.approx(0.7)
-
-
-import pytest

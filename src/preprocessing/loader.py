@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import logging
-from datetime import date
 from pathlib import Path
 
 from src.ingestion.models.ohlcv import OHLCVRecord

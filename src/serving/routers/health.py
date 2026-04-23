@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
-from src.serving.auth import require_auth
 from src.serving.loader import ArtifactLoader
 
 router = APIRouter()

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
-from pathlib import Path
 
-import pytest
 
 from src.monitoring.persistence import append_monitoring_csv, read_status, update_status
 

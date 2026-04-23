@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from src.ingestion.pipeline import IngestionPipeline
-from src.ingestion.rate_limiter import RateLimiter
 
 
 def _make_pipeline(tmp_path: Path) -> IngestionPipeline:
@@ -63,7 +62,6 @@ def test_ohlcv_failure_excludes_ticker_and_writes_alert(tmp_path):
 
 def test_sentiment_failure_writes_nulls_ohlcv_unaffected(tmp_path):
     from src.ingestion.models.ohlcv import OHLCVRecord
-    from src.ingestion.models.sentiment import SentimentRecord
 
     pipeline = _make_pipeline(tmp_path)
     _stub_universe(pipeline, ["AAPL"])

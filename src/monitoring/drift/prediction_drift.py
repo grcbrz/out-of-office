@@ -22,20 +22,20 @@ def detect_prediction_drift(
     max_signal_concentration: float,
 ) -> PredictionDriftResult:
     labels = ["BUY", "HOLD", "SELL"]
-    ref_arr = np.array([reference_counts.get(l, 0) for l in labels], dtype=float)
-    cur_arr = np.array([current_counts.get(l, 0) for l in labels], dtype=float)
+    ref_arr = np.array([reference_counts.get(lbl, 0) for lbl in labels], dtype=float)
+    cur_arr = np.array([current_counts.get(lbl, 0) for lbl in labels], dtype=float)
 
     total_current = cur_arr.sum()
     if total_current == 0:
         return PredictionDriftResult(
             triggered=False,
             chi2_pvalue=1.0,
-            current_distribution={l: 0.0 for l in labels},
+            current_distribution={lbl: 0.0 for lbl in labels},
             degenerate_signal=False,
             dominant_class=None,
         )
 
-    current_distribution = {l: float(cur_arr[i] / total_current) for i, l in enumerate(labels)}
+    current_distribution = {lbl: float(cur_arr[i] / total_current) for i, lbl in enumerate(labels)}
 
     # Normalise reference to expected counts matching current total
     total_ref = ref_arr.sum()

@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import os
 from datetime import date
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 _TOKEN = "a" * 32
@@ -14,7 +12,7 @@ _AUTH_HEADER = {"Authorization": f"Bearer {_TOKEN}"}
 
 def _make_client():
     os.environ["API_TOKEN"] = _TOKEN
-    from src.serving.app import app, _loader, _metrics
+    from src.serving.app import app, _loader
     # Reset state
     _loader.is_loaded = False
     _loader.model_name = None
@@ -64,7 +62,7 @@ def test_metrics_returns_json():
 
 
 def test_predict_with_loaded_artifact(tmp_path):
-    from src.serving.app import app, _loader, _metrics
+    from src.serving.app import app, _loader
     os.environ["API_TOKEN"] = _TOKEN
     _loader.is_loaded = True
     _loader.model_name = "nhits"

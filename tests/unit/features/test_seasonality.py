@@ -24,5 +24,5 @@ def test_month_end_flag():
         pd.Timestamp("2024-01-30").date(),
     ]})
     result = compute_seasonality_features(df)
-    assert result["is_month_end"].iloc[0] == True
-    assert result["is_month_end"].iloc[1] == False
+    assert result["is_month_end"].iloc[0] == True  # noqa: E712
+    assert result["is_month_end"].iloc[1] == False  # noqa: E712

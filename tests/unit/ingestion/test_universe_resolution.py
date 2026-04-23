@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from src.ingestion.clients.polygon import PolygonClient
 from src.ingestion.rate_limiter import RateLimiter

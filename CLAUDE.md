@@ -3,7 +3,7 @@
 ## Project Overview
 
 **Purpose:** Private-use stock recommender system producing Buy/Hold/Sell signals via time series forecasting.
-**Stack:** Python · macOS M2 · VS Code · GitHub
+**Stack:** Python · VS Code · GitHub
 **Status:** Greenfield
 **Forecast horizon:** Next-day signal (t+1)
 **Stock universe:** Top 50 US stocks by volume (dynamically resolved nightly)

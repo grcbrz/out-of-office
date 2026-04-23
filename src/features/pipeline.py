@@ -10,7 +10,7 @@ import pandas as pd
 from src.features.audit import lookahead_bias_guard, null_audit
 from src.features.lags import compute_lag_features
 from src.features.returns import compute_forward_return, compute_log_returns
-from src.features.schema import FEATURE_COLUMNS, FeatureRecord
+from src.features.schema import FeatureRecord
 from src.features.seasonality import compute_seasonality_features
 from src.features.sentiment import passthrough_sentiment
 from src.features.target import compute_target_label

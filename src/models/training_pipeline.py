@@ -4,16 +4,14 @@ import logging
 import random
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from src.features.audit import LookaheadBiasError, lookahead_bias_guard
-from src.features.schema import FEATURE_COLUMNS
+from src.features.audit import lookahead_bias_guard
 from src.models.harness import Fold, generate_folds
 from src.models.persistence import save_artifact
-from src.models.preparation import DataPreparer, TrainingDataError
+from src.models.preparation import DataPreparer
 from src.models.selector import ModelResult, select_winner
 
 logger = logging.getLogger(__name__)

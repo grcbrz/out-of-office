@@ -4,10 +4,9 @@ import csv
 import json
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
-import pytest
 
 from src.preprocessing.pipeline import PreprocessingPipeline
 
@@ -29,7 +28,6 @@ def _write_ohlcv_csv(raw_dir: Path, ticker: str, run_date: date) -> None:
         writer = csv.DictWriter(f, fieldnames=["ticker", "date", "open", "high", "low", "close", "volume", "vwap"])
         writer.writeheader()
         for i in range(70):
-            d = f"202{i//365 + 3}-{(i//30) % 12 + 1:02d}-{(i % 28) + 1:02d}"
             writer.writerow({
                 "ticker": ticker, "date": f"2023-{(i % 11) + 1:02d}-{(i % 28) + 1:02d}",
                 "open": 100.0, "high": 105.0, "low": 95.0, "close": 102.0,

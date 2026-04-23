@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 
 class ProcessedRecord(BaseModel):

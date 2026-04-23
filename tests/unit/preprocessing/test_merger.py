@@ -29,7 +29,7 @@ def test_sentiment_merge_present():
     result = merge_ohlcv_sentiment(_ohlcv_df(), _sentiment_df("2024-01-02"))
     row = result[result["date"] == pd.Timestamp("2024-01-02").date()].iloc[0]
     assert row["bullish_percent"] == pytest.approx(0.6)
-    assert row["sentiment_available"] == True
+    assert row["sentiment_available"] == True  # noqa: E712
 
 
 def test_sentiment_merge_missing_produces_false():
@@ -40,7 +40,7 @@ def test_sentiment_merge_missing_produces_false():
 def test_partial_sentiment_only_available_on_matched_date():
     result = merge_ohlcv_sentiment(_ohlcv_df(), _sentiment_df("2024-01-02"))
     row_jan3 = result[result["date"] == pd.Timestamp("2024-01-03").date()].iloc[0]
-    assert row_jan3["sentiment_available"] == False
+    assert row_jan3["sentiment_available"] == False  # noqa: E712
 
 
 def test_output_sorted_by_date():

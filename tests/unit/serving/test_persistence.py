@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
-from pathlib import Path
 
-import pytest
 
 from src.serving.persistence import append_prediction_csv
 from src.serving.schemas import PredictionRecord

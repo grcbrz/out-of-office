@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from src.evaluation.aggregation import aggregate_across_folds, per_ticker_breakdown
 

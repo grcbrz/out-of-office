@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 
 from src.monitoring.drift.prediction_drift import PredictionDriftDetector, detect_prediction_drift
 

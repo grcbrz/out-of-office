@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """Assert that no real network calls escape during ingestion tests."""
 
-import pytest
 
 
 def test_httpx_not_imported_without_mock(monkeypatch):
@@ -12,8 +11,6 @@ def test_httpx_not_imported_without_mock(monkeypatch):
     """
     import httpx
     import pytest
-
-    original_get = httpx.Client.get
 
     calls: list = []
 

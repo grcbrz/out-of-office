@@ -4,7 +4,7 @@ import datetime as dt
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException
 
 from src.serving.auth import require_auth, validate_token_at_startup
 from src.serving.loader import ArtifactLoader
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Stock Recommender API", lifespan=lifespan)
+app = FastAPI(title="OOO API", lifespan=lifespan)
 
 
 @app.get("/health")

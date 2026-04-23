@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 import json
 import logging
-from dataclasses import asdict
 from pathlib import Path
 
 logger = logging.getLogger(__name__)

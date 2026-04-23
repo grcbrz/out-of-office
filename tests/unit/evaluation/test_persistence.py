@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import csv
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from src.evaluation.persistence import log_to_mlflow, write_csv_reports
 
@@ -24,9 +22,9 @@ def test_write_csv_reports_creates_files(tmp_path):
 
 
 def test_write_csv_reports_skips_empty():
-    from io import StringIO
-    # Should not raise for empty row lists
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
+
     with tempfile.TemporaryDirectory() as td:
         write_csv_reports(pathlib.Path(td), {"empty.csv": []})
         assert not (pathlib.Path(td) / "empty.csv").exists()

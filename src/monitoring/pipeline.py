@@ -13,7 +13,7 @@ from src.monitoring.degradation import DegradationDetector
 from src.monitoring.drift.evidently_report import EvidentlyReporter
 from src.monitoring.drift.feature_drift import FeatureDriftDetector
 from src.monitoring.drift.prediction_drift import PredictionDriftDetector
-from src.monitoring.persistence import append_monitoring_csv, read_status, update_status
+from src.monitoring.persistence import append_monitoring_csv, read_status
 from src.monitoring.trigger import RetrainingTrigger
 
 logger = logging.getLogger(__name__)

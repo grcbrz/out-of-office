@@ -4,10 +4,7 @@ import csv
 import json
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock
 
-import pandas as pd
-import pytest
 
 from src.features.pipeline import FeaturePipeline, _distribution, _is_nan
 

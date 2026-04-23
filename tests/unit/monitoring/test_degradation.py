@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from src.monitoring.degradation import DegradationDetector, compute_hit_rate
 

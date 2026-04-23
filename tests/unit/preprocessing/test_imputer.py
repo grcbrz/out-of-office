@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 import pandas_market_calendars as mcal
-import pytest
 
 from src.preprocessing.imputer import fill_volume, forward_fill_close
 
@@ -32,7 +31,7 @@ def test_forward_fill_within_limit():
     result = forward_fill_close(df, _schedule())
     assert len(result) == 3
     assert result.loc[result["date"] == pd.Timestamp("2024-01-03").date(), "close"].iloc[0] == 100.0
-    assert result.loc[result["date"] == pd.Timestamp("2024-01-03").date(), "imputed_close"].iloc[0] == True
+    assert result.loc[result["date"] == pd.Timestamp("2024-01-03").date(), "imputed_close"].iloc[0] == True  # noqa: E712
 
 
 def test_forward_fill_exceeds_limit_drops_row(caplog):
@@ -53,10 +52,10 @@ def test_volume_zero_fill():
     df = _df(["2024-01-02", "2024-01-03"], [100.0, 101.0], [1000.0, None])
     result = fill_volume(df)
     assert result.loc[1, "volume"] == 0
-    assert result.loc[1, "imputed_volume"] == True
+    assert result.loc[1, "imputed_volume"] == True  # noqa: E712
 
 
 def test_volume_present_not_flagged():
     df = _df(["2024-01-02"], [100.0], [5000.0])
     result = fill_volume(df)
-    assert result.loc[0, "imputed_volume"] == False
+    assert result.loc[0, "imputed_volume"] == False  # noqa: E712

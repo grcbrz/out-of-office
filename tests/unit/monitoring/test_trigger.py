@@ -3,9 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
 
-import pytest
 
 from src.monitoring.alerts import AlertWriter
 from src.monitoring.degradation import DegradationResult

@@ -1,0 +1,13 @@
+host: 127.0.0.1
+port: 8000
+log_level: info
+
+model:
+  artifact_dir: models/production
+
+predictions:
+  output_dir: data/predictions
+  default_universe: all
+
+security:
+  token_min_length: 32

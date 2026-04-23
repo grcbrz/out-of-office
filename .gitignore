@@ -1,0 +1,39 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data (raw is immutable and large; never commit)
+data/raw/
+data/processed/
+data/features/
+data/predictions/
+data/monitoring/
+
+# Models and experiment tracking
+models/production/
+mlruns/
+
+# Reports (generated; not source)
+reports/
+
+# macOS
+.DS_Store
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Configs with secrets (none expected, but guard)
+configs/*.secret.yaml

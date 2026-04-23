@@ -1,0 +1,7 @@
+# Dev tooling — not required at runtime
+black
+ruff
+mypy
+pytest
+pytest-cov
+pytest-mock

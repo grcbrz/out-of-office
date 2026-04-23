@@ -1,0 +1,8 @@
+input_size: 30
+h: 1
+n_freq_downsample: [2, 1, 1]
+mlp_units: [[512, 512], [512, 512], [512, 512]]
+dropout_prob_theta: 0.1
+max_steps: 500
+learning_rate: 0.001
+random_seed: 42

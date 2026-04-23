@@ -1,0 +1,20 @@
+walk_forward:
+  train_window: 252       # trading days
+  step_size: 21           # trading days
+  min_folds: 3            # abort if fewer folds available
+
+data:
+  feature_dir: data/features
+  ticker_map: configs/ticker_map.json
+
+training:
+  random_seed: 42
+  early_stopping_patience: 20
+  n_workers: 3            # one per model; tune down if M2 memory pressure
+
+mlflow:
+  experiment_name: stock-recommender
+  tracking_uri: mlruns/
+
+artifacts:
+  production_dir: models/production

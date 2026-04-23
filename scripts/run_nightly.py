@@ -9,6 +9,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
+# Add repo root to sys.path so src imports work when running this script
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from dotenv import load_dotenv
 
 load_dotenv()

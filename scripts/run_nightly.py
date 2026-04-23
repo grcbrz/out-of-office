@@ -9,6 +9,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
+# Add repo root to sys.path so src imports work when running this script
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -143,10 +146,14 @@ def main() -> None:
 
     # 6. Prediction
     from scripts.prediction_client import PredictionClient
+    import httpx
     api_token = os.environ.get("API_TOKEN", "")
     if api_token:
-        PredictionClient().run(run_date)
-        logger.info("prediction complete")
+        try:
+            PredictionClient().run(run_date)
+            logger.info("prediction complete")
+        except (httpx.ConnectError, httpx.NetworkError) as exc:
+            logger.warning("API server not running; skipping prediction (%s)", exc)
     else:
         logger.warning("API_TOKEN not set — skipping prediction client")
 

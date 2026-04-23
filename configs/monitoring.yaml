@@ -1,0 +1,25 @@
+reference_window_days: 252
+current_window_days: 21
+
+feature_drift:
+  ks_pvalue_threshold: 0.05
+  psi_warning_threshold: 0.10
+  psi_alert_threshold: 0.20
+
+prediction_drift:
+  chi2_pvalue_threshold: 0.05
+  max_signal_concentration: 0.80
+
+performance_degradation:
+  hit_rate_threshold: 0.45
+  consecutive_windows_required: 2
+
+evidently:
+  report_frequency_days: 7
+  output_dir: reports/monitoring
+
+alerts:
+  output_dir: data/monitoring/alerts
+
+monitoring_history:
+  output_path: reports/monitoring/monitoring_history.csv

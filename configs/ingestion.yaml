@@ -1,0 +1,11 @@
+polygon:
+  calls_per_minute: 100   # Basic plan; set to 5 for free tier
+  universe_size: 50
+
+finnhub:
+  calls_per_minute: 60    # unchanged across tiers
+
+retry:
+  attempts: 3
+  wait_min_seconds: 2
+  wait_max_seconds: 4

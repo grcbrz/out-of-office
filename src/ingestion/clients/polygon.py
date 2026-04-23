@@ -31,16 +31,16 @@ class PolygonClient:
     # Universe resolution
     # ------------------------------------------------------------------
 
-    def resolve_universe(self, trade_date: date) -> list[str]:
-        """Return top-50 common-stock tickers by volume for trade_date."""
+    def resolve_universe(self, trade_date: date, universe_size: int = 50) -> list[str]:
+        """Return top-N common-stock tickers by volume for trade_date."""
         raw = self._fetch_grouped_daily(trade_date)
         results = raw.get("results") or []
         common = [r for r in results if r.get("T") and self._is_common_stock(r)]
         common.sort(key=lambda r: r.get("v", 0), reverse=True)
-        universe = [r["T"] for r in common[:50]]
-        if len(universe) < 50:
+        universe = [r["T"] for r in common[:universe_size]]
+        if len(universe) < universe_size:
             logger.warning(
-                "universe resolved to %d tickers (< 50) for %s", len(universe), trade_date
+                "universe resolved to %d tickers (< %d) for %s", len(universe), universe_size, trade_date
             )
         return universe
 

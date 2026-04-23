@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pandas_market_calendars as mcal
+import yaml
 
 from src.ingestion.alerts import AlertWriter
 from src.ingestion.clients.finnhub import FinnhubClient
@@ -17,8 +18,17 @@ from src.ingestion.rate_limiter import RateLimiter
 logger = logging.getLogger(__name__)
 
 _RAW_DIR = Path("data/raw")
-_POLYGON_CALLS_PER_MIN = 5
-_FINNHUB_CALLS_PER_MIN = 60
+_CONFIG_PATH = Path("configs/ingestion.yaml")
+
+
+def _load_config(config_path: Path = _CONFIG_PATH) -> dict:
+    if config_path.exists():
+        with config_path.open() as fh:
+            return yaml.safe_load(fh)
+    return {
+        "polygon": {"calls_per_minute": 5, "universe_size": 50},
+        "finnhub": {"calls_per_minute": 60},
+    }
 
 
 class IngestionPipeline:
@@ -33,9 +43,12 @@ class IngestionPipeline:
         polygon_api_key: str,
         finnhub_api_key: str,
         raw_dir: Path = _RAW_DIR,
+        config_path: Path = _CONFIG_PATH,
     ) -> None:
-        polygon_limiter = RateLimiter(_POLYGON_CALLS_PER_MIN)
-        finnhub_limiter = RateLimiter(_FINNHUB_CALLS_PER_MIN)
+        cfg = _load_config(config_path)
+        polygon_limiter = RateLimiter(cfg["polygon"]["calls_per_minute"])
+        finnhub_limiter = RateLimiter(cfg["finnhub"]["calls_per_minute"])
+        self._universe_size: int = cfg["polygon"].get("universe_size", 50)
         self._polygon = PolygonClient(polygon_api_key, polygon_limiter)
         self._finnhub = FinnhubClient(finnhub_api_key, finnhub_limiter)
         self._raw_dir = raw_dir
@@ -109,7 +122,7 @@ class IngestionPipeline:
 
     def _resolve_universe(self, run_date: date) -> list[str]:
         try:
-            return self._polygon.resolve_universe(run_date)
+            return self._polygon.resolve_universe(run_date, self._universe_size)
         except Exception as exc:
             logger.critical("universe resolution failed: %s", exc)
             raise RuntimeError(f"universe resolution failed for {run_date}") from exc

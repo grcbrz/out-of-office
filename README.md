@@ -80,7 +80,7 @@ make serve-uninstall   # Remove the service
 ```bash
 make nightly
 # Or with an explicit start date:
-.venv/bin/python scripts/run_nightly.py --start-date 2024-01-02
+.venv/bin/python scripts/run_nightly.py --start-date 2026-04-24
 ```
 
 ---

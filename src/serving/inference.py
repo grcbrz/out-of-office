@@ -37,14 +37,12 @@ class InferenceEngine:
         signal = _SIGNAL_MAP[class_idx]
         return signal, confidence
 
-    def _prepare(self, row: pd.Series) -> np.ndarray:
+    def _prepare(self, row: pd.Series) -> pd.DataFrame:
         cols = [c for c in self._trained_features if c in row.index]
-        values = row[cols].fillna(0.0)
-        return values.values.reshape(1, -1).astype(float)
+        return row[cols].fillna(0.0).astype(float).to_frame().T.reset_index(drop=True)
 
-    def _forward(self, X: np.ndarray) -> np.ndarray:
+    def _forward(self, X: pd.DataFrame) -> np.ndarray:
         if hasattr(self._model, "predict_proba"):
             return self._model.predict_proba(X)[0]
-        # Mock uniform distribution for models that don't expose predict_proba
         n_classes = 3
         return np.ones(n_classes) / n_classes

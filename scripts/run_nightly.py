@@ -84,7 +84,10 @@ def _should_retrain(run_date: date, force: bool) -> bool:
 def _resolve_production_artifact() -> Path | None:
     if not _PRODUCTION_DIR.exists():
         return None
-    candidates = [p for p in _PRODUCTION_DIR.iterdir() if p.is_dir() and (p / "metadata.json").exists()]
+    candidates = sorted(
+        [p for p in _PRODUCTION_DIR.iterdir() if p.is_dir() and (p / "metadata.json").exists()],
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
     return candidates[0] if candidates else None
 
 

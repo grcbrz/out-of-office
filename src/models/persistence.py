@@ -19,6 +19,14 @@ def save_artifact(
 ) -> None:
     """Write the production artifact for the winning model to models/production/."""
     dest = production_dir / model_name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove all stale artifacts — only the current winner should live here
+    if dest.parent.exists():
+        for stale in dest.parent.iterdir():
+            if stale.is_dir() and stale != dest:
+                shutil.rmtree(stale)
+                logger.info("removed stale production artifact: %s", stale.name)
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)

@@ -30,11 +30,19 @@ class ArtifactLoader:
 
     def load(self) -> None:
         """Attempt to load the production artifact. Sets is_loaded=False on failure."""
-        model_dirs = [d for d in self._production_dir.iterdir() if d.is_dir()] if self._production_dir.exists() else []
+        model_dirs = sorted(
+            [d for d in self._production_dir.iterdir() if d.is_dir()],
+            key=lambda d: d.stat().st_mtime, reverse=True,
+        ) if self._production_dir.exists() else []
         if not model_dirs:
             logger.critical("no production artifact found in %s; starting in degraded mode", self._production_dir)
             return
 
+        if len(model_dirs) > 1:
+            logger.warning(
+                "multiple model dirs found — using most recent (%s); stale dirs: %s",
+                model_dirs[0].name, [d.name for d in model_dirs[1:]],
+            )
         model_dir = model_dirs[0]
         missing = [f for f in _REQUIRED_FILES if not (model_dir / f).exists()]
         if missing:

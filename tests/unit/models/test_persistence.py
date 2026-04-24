@@ -87,6 +87,28 @@ def test_save_artifact_copies_weights_if_present(tmp_path):
     assert (prod_dir / "nhits" / "model.pt").exists()
 
 
+def test_save_artifact_evicts_stale_model_dirs(tmp_path):
+    """When a new model wins, the old winner's directory must be removed."""
+    model_dir = tmp_path / "src"
+    model_dir.mkdir()
+    prod_dir = tmp_path / "production"
+
+    save_artifact(
+        model_name="nhits", model_dir=model_dir,
+        imputation_params={}, ticker_map={}, class_weights={}, metadata={},
+        production_dir=prod_dir,
+    )
+    assert (prod_dir / "nhits").exists()
+
+    save_artifact(
+        model_name="autoformer", model_dir=model_dir,
+        imputation_params={}, ticker_map={}, class_weights={}, metadata={},
+        production_dir=prod_dir,
+    )
+    assert (prod_dir / "autoformer").exists()
+    assert not (prod_dir / "nhits").exists(), "stale nhits artifact must be evicted"
+
+
 def test_save_artifact_copies_pickle_if_present(tmp_path):
     """sklearn-backed wrappers persist as model.pkl rather than model.pt."""
     model_dir = tmp_path / "src"

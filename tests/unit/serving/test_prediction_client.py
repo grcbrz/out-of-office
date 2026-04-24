@@ -15,6 +15,13 @@ def _mock_response(payload: dict) -> MagicMock:
     return resp
 
 
+def test_run_raises_when_token_missing(monkeypatch):
+    monkeypatch.delenv("API_TOKEN", raising=False)
+    client = PredictionClient()
+    with pytest.raises(RuntimeError, match="API_TOKEN is not set"):
+        client.run(date(2026, 4, 24))
+
+
 def test_run_sends_predict_date_key(monkeypatch):
     """Payload must use predict_date, not date — matches PredictRequest schema."""
     monkeypatch.setenv("API_TOKEN", "test-token-32-chars-xxxxxxxxxxxx")

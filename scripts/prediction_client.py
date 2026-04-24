@@ -19,6 +19,8 @@ class PredictionClient:
 
     def run(self, run_date: date) -> dict:
         """Trigger prediction for the full universe on run_date."""
+        if not self._token:
+            raise RuntimeError("API_TOKEN is not set — source .env or export the variable before calling PredictionClient")
         headers = {"Authorization": f"Bearer {self._token}"}
         payload = {"predict_date": str(run_date)}
         with httpx.Client(base_url=self._base_url, timeout=120) as client:

@@ -21,6 +21,7 @@ data/processed/
 data/features/
 data/predictions/
 data/monitoring/
+*.db
 
 # Models and experiment tracking
 models/production/

@@ -16,10 +16,13 @@ _SIGNAL_MAP = {0: "SELL", 1: "HOLD", 2: "BUY"}
 class InferenceEngine:
     """Runs model forward pass and decodes softmax probabilities to BUY/HOLD/SELL."""
 
-    def __init__(self, model: Any, imputation_params: dict[str, float], ticker_map: dict[str, int]) -> None:
+    def __init__(self, model: Any, imputation_params: dict[str, float], ticker_map: dict[str, int],
+                 trained_features: list[str] | None = None) -> None:
         self._model = model
         self._imputation_params = imputation_params
         self._ticker_map = ticker_map
+        # If not provided, infer from FEATURE_COLUMNS; assume all that fit in n_features_in_
+        self._trained_features = trained_features or FEATURE_COLUMNS
 
     def predict(self, ticker: str, feature_row: pd.Series) -> tuple[str, float]:
         """Return (signal, confidence) for a single ticker's feature row."""
@@ -35,7 +38,7 @@ class InferenceEngine:
         return signal, confidence
 
     def _prepare(self, row: pd.Series) -> np.ndarray:
-        cols = [c for c in FEATURE_COLUMNS if c in row.index]
+        cols = [c for c in self._trained_features if c in row.index]
         values = row[cols].fillna(0.0)
         return values.values.reshape(1, -1).astype(float)
 

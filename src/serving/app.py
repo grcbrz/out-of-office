@@ -4,9 +4,12 @@ import datetime as dt
 import logging
 from contextlib import asynccontextmanager
 
+import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException
 
 from src.serving.auth import require_auth, validate_token_at_startup
+from src.serving.explainer import ServingExplainer
+from src.serving.inference import InferenceEngine
 from src.serving.loader import ArtifactLoader
 from src.serving.metrics_store import MetricsStore
 from src.serving.persistence import append_prediction_csv
@@ -53,12 +56,31 @@ def predict(request: PredictRequest, _: str = Depends(require_auth)):
     if unknown:
         raise HTTPException(status_code=400, detail=f"unknown tickers: {unknown}")
 
+    engine = InferenceEngine(
+        model=_loader.model,
+        imputation_params=_loader.imputation_params,
+        ticker_map=_loader.ticker_map,
+        trained_features=_loader.trained_features,
+    )
+    explainer = ServingExplainer(model=_loader.model, trained_features=_loader.trained_features)
+
     predictions: list[PredictionItem] = []
     warnings: list[str] = []
 
+    from src.features.schema import FEATURE_COLUMNS
+
     for ticker in tickers:
-        signal, confidence = "HOLD", 0.33
-        explanation = {"top_features": [], "attention_weights": None, "explainer_used": "none"}
+        # Stub: in production, load actual feature row from data/features/{ticker}/{run_date}.csv
+        feature_row = pd.Series({c: 0.0 for c in FEATURE_COLUMNS if c != "ticker_id"})
+
+        try:
+            signal, confidence = engine.predict(ticker, feature_row)
+        except Exception as e:
+            logger.warning("inference failed for %s: %s", ticker, e)
+            signal, confidence = "HOLD", 0.33
+            warnings.append(f"{ticker}: inference error — {e}")
+
+        explanation = explainer.explain(feature_row)
 
         item = PredictionItem(
             ticker=ticker, signal=signal, confidence=confidence, explanation=explanation
@@ -69,7 +91,7 @@ def predict(request: PredictRequest, _: str = Depends(require_auth)):
         record = PredictionRecord(
             run_date=run_date, ticker=ticker, signal=signal,
             confidence=confidence, model=_loader.model_name or "unknown",
-            explainer_used="none", predicted_at=dt.datetime.now(dt.timezone.utc),
+            explainer_used=explanation.get("explainer_used", "none"), predicted_at=dt.datetime.now(dt.timezone.utc),
         )
         append_prediction_csv(record)
 

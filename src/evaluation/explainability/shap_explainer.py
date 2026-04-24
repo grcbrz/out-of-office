@@ -45,6 +45,7 @@ class SHAPExplainer:
         """Return (shap_values, explainer_type) for given input."""
         if self._explainer is None:
             self.fit()
+        assert self._explainer is not None
         shap_values = self._explainer.shap_values(X.values)
         return np.array(shap_values), self._explainer_type
 

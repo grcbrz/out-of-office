@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 # Tie-breaking preference: prefer simpler architecture
 _PREFERENCE_ORDER = ["nhits", "patchtst", "autoformer"]
@@ -11,6 +12,7 @@ class ModelResult:
     model_name: str
     f1_macro: float
     artifact_path: str | None = None
+    predictions: Any = None  # numpy int array aligned with the labelled rows of val_df
 
 
 def select_winner(results: list[ModelResult]) -> ModelResult:

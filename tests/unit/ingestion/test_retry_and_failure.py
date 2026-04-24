@@ -13,12 +13,12 @@ from src.ingestion.pipeline import IngestionPipeline
 def _make_pipeline(tmp_path: Path) -> IngestionPipeline:
     pipeline = IngestionPipeline(
         polygon_api_key="poly_key",
-        finnhub_api_key="finn_key",
+        alphavantage_api_key="av_key",
         raw_dir=tmp_path / "data" / "raw",
     )
     # Replace real HTTP clients with mocks
     pipeline._polygon = MagicMock()
-    pipeline._finnhub = MagicMock()
+    pipeline._alphavantage = MagicMock()
     return pipeline
 
 
@@ -31,7 +31,7 @@ def _stub_ohlcv(pipeline: IngestionPipeline, ticker: str, records: list) -> None
 
 
 def _stub_sentiment(pipeline: IngestionPipeline, ticker: str, record) -> None:
-    pipeline._finnhub.fetch_sentiment.return_value = record
+    pipeline._alphavantage.fetch_sentiment.return_value = record
 
 
 def test_universe_failure_aborts_run(tmp_path):
@@ -47,7 +47,7 @@ def test_ohlcv_failure_excludes_ticker_and_writes_alert(tmp_path):
     pipeline = _make_pipeline(tmp_path)
     _stub_universe(pipeline, ["AAPL", "MSFT"])
     pipeline._polygon.fetch_ohlcv.side_effect = Exception("timeout")
-    pipeline._finnhub.fetch_sentiment.return_value = MagicMock(
+    pipeline._alphavantage.fetch_sentiment.return_value = MagicMock(
         ticker="MSFT", date=date(2024, 1, 2),
         bullish_percent=None, bearish_percent=None,
         company_news_score=None, buzz_weekly_average=None,
@@ -71,7 +71,7 @@ def test_sentiment_failure_writes_nulls_ohlcv_unaffected(tmp_path):
         open=100.0, high=110.0, low=90.0, close=105.0, volume=1000000,
     )
     pipeline._polygon.fetch_ohlcv.return_value = [ohlcv_record]
-    pipeline._finnhub.fetch_sentiment.side_effect = Exception("sentiment API down")
+    pipeline._alphavantage.fetch_sentiment.side_effect = Exception("sentiment API down")
 
     pipeline.run(date(2024, 1, 2), date(2024, 1, 2))
 
@@ -96,7 +96,7 @@ def test_idempotency_skips_existing_files(tmp_path):
     pipeline._polygon.fetch_ohlcv.return_value = [ohlcv_record]
 
     null_sentiment = SentimentRecord(ticker="AAPL", date=date(2024, 1, 2))
-    pipeline._finnhub.fetch_sentiment.return_value = null_sentiment
+    pipeline._alphavantage.fetch_sentiment.return_value = null_sentiment
 
     pipeline.run(date(2024, 1, 2), date(2024, 1, 2))
     call_count_after_first = pipeline._polygon.fetch_ohlcv.call_count
@@ -119,7 +119,7 @@ def test_run_metadata_written(tmp_path):
             open=100.0, high=110.0, low=90.0, close=105.0, volume=1000000,
         )
     ]
-    pipeline._finnhub.fetch_sentiment.return_value = SentimentRecord(
+    pipeline._alphavantage.fetch_sentiment.return_value = SentimentRecord(
         ticker="AAPL", date=date(2024, 1, 2)
     )
 

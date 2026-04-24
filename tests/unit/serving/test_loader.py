@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 from pathlib import Path
 
 
@@ -11,12 +12,18 @@ def _write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data))
 
 
+def _write_pickle(path: Path, obj) -> None:
+    with path.open("wb") as f:
+        pickle.dump(obj, f)
+
+
 def _make_valid_artifact(production_dir: Path, model_name: str = "nhits") -> Path:
     model_dir = production_dir / model_name
     model_dir.mkdir(parents=True)
     _write_json(model_dir / "imputation_params.json", {"close": 100.0})
     _write_json(model_dir / "ticker_map.json", {"AAPL": 0, "MSFT": 1})
     _write_json(model_dir / "metadata.json", {"f1_macro": 0.42, "model": model_name})
+    _write_pickle(model_dir / "model.pkl", {"dummy": "model"})
     return model_dir
 
 

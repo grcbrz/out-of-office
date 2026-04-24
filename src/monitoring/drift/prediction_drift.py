@@ -57,10 +57,10 @@ def detect_prediction_drift(
     dominant_class = max(current_distribution, key=current_distribution.__getitem__) if degenerate_signal else None
 
     return PredictionDriftResult(
-        triggered=triggered,
+        triggered=bool(triggered),
         chi2_pvalue=float(chi2_pvalue),
         current_distribution=current_distribution,
-        degenerate_signal=degenerate_signal,
+        degenerate_signal=bool(degenerate_signal),
         dominant_class=dominant_class,
     )
 

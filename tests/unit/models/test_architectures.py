@@ -1,110 +1,100 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
 import numpy as np
 import pandas as pd
 import pytest
 
+from src.features.schema import FEATURE_COLUMNS
 from src.models.architectures.autoformer import AutoformerWrapper
 from src.models.architectures.nhits import NHiTSWrapper
 from src.models.architectures.patchtst import PatchTSTWrapper
 
-
-def _make_df(n=10) -> pd.DataFrame:
-    return pd.DataFrame({"feature_a": np.random.randn(n), "ticker_id": range(n)})
-
-
-def _make_labels(n=10) -> pd.Series:
-    return pd.Series(["BUY"] * n)
+_WRAPPERS = [
+    ("nhits", NHiTSWrapper),
+    ("patchtst", PatchTSTWrapper),
+    ("autoformer", AutoformerWrapper),
+]
 
 
-# ── NHiTS ──
+def _make_training_data(n: int = 60, seed: int = 0) -> tuple[pd.DataFrame, pd.Series]:
+    """Build a small frame containing every FEATURE_COLUMNS entry plus a labelled target."""
+    rng = np.random.default_rng(seed)
+    columns = {col: rng.normal(size=n) for col in FEATURE_COLUMNS}
+    columns["ticker_id"] = rng.integers(0, 5, size=n)
+    df = pd.DataFrame(columns)
+    # Roughly balanced labels so MLPClassifier doesn't degenerate.
+    labels = np.tile(np.array(["SELL", "HOLD", "BUY"]), n // 3 + 1)[:n]
+    rng.shuffle(labels)
+    return df, pd.Series(labels)
 
 
-def test_nhits_predict_raises_before_training():
-    wrapper = NHiTSWrapper(config={})
+@pytest.mark.parametrize("name,cls", _WRAPPERS)
+def test_predict_raises_before_training(name, cls):
+    wrapper = cls(config={})
     with pytest.raises(RuntimeError, match="not trained"):
-        wrapper.predict(_make_df())
+        wrapper.predict(pd.DataFrame({c: [0.0] for c in FEATURE_COLUMNS}))
 
 
-def test_nhits_train_with_mock_neuralforecast():
-    mock_nf_instance = MagicMock()
-    mock_nf_class = MagicMock(return_value=mock_nf_instance)
-    mock_nhits_class = MagicMock()
-
-    with patch.dict("sys.modules", {
-        "neuralforecast": MagicMock(NeuralForecast=mock_nf_class),
-        "neuralforecast.models": MagicMock(NHITS=mock_nhits_class),
-    }):
-        wrapper = NHiTSWrapper(config={"h": 1, "max_steps": 10})
-        wrapper.train(_make_df(), _make_labels(), class_weights={})
-        assert wrapper._model is not None
+@pytest.mark.parametrize("name,cls", _WRAPPERS)
+def test_train_predict_roundtrip(name, cls):
+    X, y = _make_training_data()
+    wrapper = cls(config={})
+    wrapper.train(X, y, class_weights={0: 1.0, 1: 1.0, 2: 1.0})
+    preds = wrapper.predict(X.head(10))
+    assert isinstance(preds, np.ndarray)
+    assert preds.shape == (10,)
+    assert set(np.unique(preds)).issubset({0, 1, 2})
 
 
-def test_nhits_predict_returns_array():
-    wrapper = NHiTSWrapper(config={})
-    wrapper._model = MagicMock()  # set model directly
-    result = wrapper.predict(_make_df(5))
-    assert len(result) == 5
+@pytest.mark.parametrize("name,cls", _WRAPPERS)
+def test_train_raises_when_no_labelled_rows(name, cls):
+    X, _ = _make_training_data(n=10)
+    y = pd.Series([None] * 10)
+    wrapper = cls(config={})
+    with pytest.raises(ValueError, match="no training rows"):
+        wrapper.train(X, y, class_weights={})
 
 
-def test_nhits_save_creates_dir(tmp_path):
-    wrapper = NHiTSWrapper(config={})
-    wrapper._model = None  # no model, but save should still create dir
-    wrapper.save(tmp_path / "artifact")
-    assert (tmp_path / "artifact").exists()
-
-
-# ── PatchTST ──
-
-
-def test_patchtst_predict_raises_before_training():
-    wrapper = PatchTSTWrapper(config={})
+@pytest.mark.parametrize("name,cls", _WRAPPERS)
+def test_predict_proba_raises_before_training(name, cls):
+    wrapper = cls(config={})
     with pytest.raises(RuntimeError, match="not trained"):
-        wrapper.predict(_make_df())
+        wrapper.predict_proba(pd.DataFrame({c: [0.0] for c in FEATURE_COLUMNS}))
 
 
-def test_patchtst_train_with_mock_neuralforecast():
-    mock_nf_class = MagicMock(return_value=MagicMock())
-    mock_patchtst_class = MagicMock()
-
-    with patch.dict("sys.modules", {
-        "neuralforecast": MagicMock(NeuralForecast=mock_nf_class),
-        "neuralforecast.models": MagicMock(PatchTST=mock_patchtst_class),
-    }):
-        wrapper = PatchTSTWrapper(config={"h": 1})
-        wrapper.train(_make_df(), _make_labels(), class_weights={})
-        assert wrapper._model is not None
+@pytest.mark.parametrize("name,cls", _WRAPPERS)
+def test_predict_proba_returns_valid_distribution(name, cls):
+    X, y = _make_training_data()
+    wrapper = cls(config={})
+    wrapper.train(X, y, class_weights={0: 1.0, 1: 1.0, 2: 1.0})
+    proba = wrapper.predict_proba(X.head(10))
+    assert proba.shape == (10, 3)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-6)
+    assert (proba >= 0).all() and (proba <= 1).all()
 
 
-def test_patchtst_load_returns_wrapper(tmp_path):
-    wrapper = PatchTSTWrapper.load(tmp_path, config={})
-    assert isinstance(wrapper, PatchTSTWrapper)
+@pytest.mark.parametrize("name,cls", _WRAPPERS)
+def test_predict_proba_consistent_with_predict(name, cls):
+    """argmax of predict_proba must equal predict for each sample."""
+    X, y = _make_training_data()
+    wrapper = cls(config={})
+    wrapper.train(X, y, class_weights={0: 1.0, 1: 1.0, 2: 1.0})
+    preds = wrapper.predict(X.head(10))
+    proba = wrapper.predict_proba(X.head(10))
+    np.testing.assert_array_equal(preds, np.argmax(proba, axis=1))
 
 
-# ── Autoformer ──
+@pytest.mark.parametrize("name,cls", _WRAPPERS)
+def test_save_load_roundtrip(name, cls, tmp_path):
+    X, y = _make_training_data()
+    wrapper = cls(config={})
+    wrapper.train(X, y, class_weights={0: 1.0, 1: 1.0, 2: 1.0})
+    expected = wrapper.predict(X.head(5))
 
+    artifact = tmp_path / "artifact"
+    wrapper.save(artifact)
+    assert (artifact / "model.pkl").exists()
 
-def test_autoformer_predict_raises_before_training():
-    wrapper = AutoformerWrapper(config={})
-    with pytest.raises(RuntimeError, match="not trained"):
-        wrapper.predict(_make_df())
-
-
-def test_autoformer_train_with_mock_neuralforecast():
-    mock_nf_class = MagicMock(return_value=MagicMock())
-    mock_autoformer_class = MagicMock()
-
-    with patch.dict("sys.modules", {
-        "neuralforecast": MagicMock(NeuralForecast=mock_nf_class),
-        "neuralforecast.models": MagicMock(Autoformer=mock_autoformer_class),
-    }):
-        wrapper = AutoformerWrapper(config={"h": 1})
-        wrapper.train(_make_df(), _make_labels(), class_weights={})
-        assert wrapper._model is not None
-
-
-def test_autoformer_load_returns_wrapper(tmp_path):
-    wrapper = AutoformerWrapper.load(tmp_path, config={})
-    assert isinstance(wrapper, AutoformerWrapper)
+    loaded = cls.load(artifact, config={})
+    actual = loaded.predict(X.head(5))
+    np.testing.assert_array_equal(expected, actual)

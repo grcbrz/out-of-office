@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import pickle
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _PRODUCTION_DIR = Path("models/production")
-_REQUIRED_FILES = ["imputation_params.json", "ticker_map.json", "metadata.json"]
+_REQUIRED_FILES = ["imputation_params.json", "ticker_map.json", "metadata.json", "model.pkl"]
 
 
 class ArtifactLoader:
@@ -23,6 +24,8 @@ class ArtifactLoader:
         self.metadata: dict[str, Any] = {}
         self.imputation_params: dict[str, float] = {}
         self.ticker_map: dict[str, int] = {}
+        self.trained_features: list[str] = []
+        self.model: Any = None
         self.is_loaded: bool = False
 
     def load(self) -> None:
@@ -42,6 +45,9 @@ class ArtifactLoader:
         self.metadata = self._read_json(model_dir / "metadata.json")
         self.imputation_params = self._read_json(model_dir / "imputation_params.json")
         self.ticker_map = self._read_json(model_dir / "ticker_map.json")
+        pkl_data = self._load_pickle(model_dir / "model.pkl")
+        self.model = pkl_data.get("model") if isinstance(pkl_data, dict) else pkl_data
+        self.trained_features = pkl_data.get("features", []) if isinstance(pkl_data, dict) else []
         self.is_loaded = True
         logger.info("loaded production artifact: %s (f1=%.3f)", self.model_name, self.metadata.get("f1_macro", 0))
 
@@ -49,3 +55,8 @@ class ArtifactLoader:
     def _read_json(path: Path) -> dict:
         with path.open() as f:
             return json.load(f)
+
+    @staticmethod
+    def _load_pickle(path: Path) -> Any:
+        with path.open("rb") as f:
+            return pickle.load(f)

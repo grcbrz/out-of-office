@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date as _date
 
 from pydantic import BaseModel, field_validator
 
 
 class OHLCVRecord(BaseModel):
     ticker: str
-    date: date
+    date: _date
     open: float
     high: float
     low: float
@@ -24,8 +24,8 @@ class OHLCVRecord(BaseModel):
 
     @field_validator("date")
     @classmethod
-    def date_not_future(cls, v: date) -> date:
-        if v > date.today():
+    def date_not_future(cls, v: _date) -> _date:
+        if v > _date.today():
             raise ValueError(f"date {v} is in the future")
         return v
 

@@ -28,10 +28,11 @@ def save_artifact(
     _write_json(dest / "class_weights.json", {str(k): v for k, v in class_weights.items()})
     _write_json(dest / "metadata.json", metadata)
 
-    # Copy model weights if present
-    weights_src = model_dir / "model.pt"
-    if weights_src.exists():
-        shutil.copy(weights_src, dest / "model.pt")
+    # Copy model weights if present (model.pt for torch artifacts, model.pkl for sklearn)
+    for fname in ("model.pt", "model.pkl"):
+        src = model_dir / fname
+        if src.exists():
+            shutil.copy(src, dest / fname)
 
     config_src = model_dir / "config.yaml"
     if config_src.exists():

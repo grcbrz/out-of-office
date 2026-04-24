@@ -4,11 +4,12 @@ import datetime as dt
 import json
 from pathlib import Path
 
+import numpy as np
 
 from src.monitoring.alerts import AlertWriter
 from src.monitoring.degradation import DegradationResult
-from src.monitoring.drift.feature_drift import FeatureDriftResult
-from src.monitoring.drift.prediction_drift import PredictionDriftResult
+from src.monitoring.drift.feature_drift import FeatureDriftResult, detect_feature_drift
+from src.monitoring.drift.prediction_drift import PredictionDriftResult, detect_prediction_drift
 from src.monitoring.trigger import RetrainingTrigger
 
 
@@ -88,6 +89,30 @@ def test_status_reset_after_retraining(tmp_path):
 
     trigger.reset_after_successful_retraining(dt.date(2026, 4, 24))
     assert json.loads(status_path.read_text())["retraining_required"] is False
+
+
+def test_alert_triggered_fields_serialize_as_json_bool(tmp_path):
+    """Regression: numpy.bool_ from drift detectors must serialize as JSON true/false, not "True"/"False"."""
+    trigger, _, alerts_dir = _make_trigger(tmp_path)
+    pred = detect_prediction_drift(
+        reference_counts={"BUY": 100, "HOLD": 200, "SELL": 50},
+        current_counts={"BUY": 5, "HOLD": 200, "SELL": 5},
+        chi2_pvalue_threshold=0.05,
+        max_signal_concentration=0.80,
+    )
+    feat = detect_feature_drift(
+        feature="x", reference=np.array([0.0, 1.0, 2.0, 3.0]), current=np.array([10.0, 11.0, 12.0, 13.0]),
+        ks_pvalue_threshold=0.05, psi_warning_threshold=0.10, psi_alert_threshold=0.20,
+    )
+    trigger.evaluate(
+        run_date=dt.date(2026, 4, 24),
+        feature_drift_results=[feat],
+        prediction_drift_result=pred,
+        degradation_result=_clean_degradation(),
+    )
+    alert = json.loads((alerts_dir / "2026-04-24.json").read_text())
+    assert alert["prediction_drift"]["triggered"] in (True, False)
+    assert alert["feature_drift"]["triggered"] in (True, False)
 
 
 def test_status_persists_on_failed_retrain(tmp_path):

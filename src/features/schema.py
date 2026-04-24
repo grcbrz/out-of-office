@@ -21,6 +21,16 @@ FEATURE_COLUMNS: list[str] = [
     "ticker_id",
 ]
 
+# Continuous-valued features only — used by KS/PSI drift gates.
+# Excludes calendricals (cycle weekly/yearly, not regime drift), boolean flags,
+# and the ticker_id categorical encoding (PSI on integer IDs is meaningless).
+_NON_CONTINUOUS_FEATURES = {
+    "day_of_week", "week_of_year", "month", "is_month_end",
+    "sentiment_available", "close_outlier_flag", "volume_outlier_flag",
+    "ticker_id",
+}
+CONTINUOUS_FEATURE_COLUMNS: list[str] = [c for c in FEATURE_COLUMNS if c not in _NON_CONTINUOUS_FEATURES]
+
 
 class FeatureRecord(BaseModel):
     ticker: str

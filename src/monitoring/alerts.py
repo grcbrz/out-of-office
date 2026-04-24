@@ -24,6 +24,6 @@ class AlertWriter:
     def write(self, alert: MonitoringAlert) -> Path:
         self._output_dir.mkdir(parents=True, exist_ok=True)
         path = self._output_dir / f"{alert.alert_date}.json"
-        path.write_text(json.dumps(asdict(alert), indent=2, default=str))
+        path.write_text(json.dumps(asdict(alert), indent=2))
         logger.info("monitoring alert written: %s", path)
         return path

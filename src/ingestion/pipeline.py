@@ -103,7 +103,7 @@ class IngestionPipeline:
             "sentiment_null": sentiment_null,
             "sentiment_failed": sentiment_failed,
             "polygon_api_version": "v2",
-            "finnhub_api_version": "v1",
+            "alphavantage_api_version": "v1",
             "started_at": started_at.isoformat(),
             "completed_at": completed_at.isoformat(),
         }

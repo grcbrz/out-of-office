@@ -41,8 +41,10 @@ serve-uninstall: ## Unload and remove launchd plist
 	launchctl unload ~/Library/LaunchAgents/com.stockrecommender.api.plist
 	rm -f ~/Library/LaunchAgents/com.stockrecommender.api.plist
 
-train: ## Run training harness
-	$(PYTHON) scripts/run_nightly.py --train-only
+train: ## Run training harness on existing data/features/
+	$(PYTHON) -c "import pandas as pd; from pathlib import Path; from src.models.training_pipeline import TrainingPipeline; \
+files = list(Path('data/features').glob('*/*.csv')); \
+TrainingPipeline().run(pd.concat([pd.read_csv(f) for f in files], ignore_index=True))"
 
 nightly: ## Run full nightly batch pipeline (optional: START_DATE=YYYY-MM-DD)
 	@set -a && [ -f .env ] && . ./.env; set +a; \

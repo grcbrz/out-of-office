@@ -64,7 +64,9 @@ def _coerce_ohlcv(row: dict) -> dict:
 
 def _coerce_sentiment(row: dict) -> dict:
     def _opt_float(val: str | None) -> float | None:
-        return float(val) if val not in (None, "", "None") else None
+        if val is None or val in ("", "None"):
+            return None
+        return float(val)
 
     return {
         "ticker": row["ticker"],

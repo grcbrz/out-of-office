@@ -50,8 +50,9 @@ class DataPreparer:
         self._imputation_params = {}
         imputable = [c for c in FEATURE_COLUMNS if c in train_df.columns and train_df[c].isna().any()]
         for col in imputable:
-            median = float(train_df[col].median())
-            self._imputation_params[col] = median
+            median = train_df[col].median()
+            # All-null column (e.g. sentiment unavailable for entire fold): default to 0.0
+            self._imputation_params[col] = float(median) if pd.notna(median) else 0.0
 
     def apply_imputation(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply fitted imputation params. Raises TrainingDataError if NaN remains."""

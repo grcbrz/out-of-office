@@ -85,3 +85,23 @@ def test_save_artifact_copies_weights_if_present(tmp_path):
     )
 
     assert (prod_dir / "nhits" / "model.pt").exists()
+
+
+def test_save_artifact_copies_pickle_if_present(tmp_path):
+    """sklearn-backed wrappers persist as model.pkl rather than model.pt."""
+    model_dir = tmp_path / "src"
+    model_dir.mkdir()
+    (model_dir / "model.pkl").write_bytes(b"fake sklearn pickle")
+    prod_dir = tmp_path / "production"
+
+    save_artifact(
+        model_name="nhits",
+        model_dir=model_dir,
+        imputation_params={},
+        ticker_map={},
+        class_weights={},
+        metadata={},
+        production_dir=prod_dir,
+    )
+
+    assert (prod_dir / "nhits" / "model.pkl").exists()

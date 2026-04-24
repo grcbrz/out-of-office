@@ -42,9 +42,10 @@ def test_bearish_percent_negative_rejected():
         SentimentRecord(**{**_valid(), "bearish_percent": -0.1})
 
 
-def test_company_news_score_negative_rejected():
-    with pytest.raises(ValidationError):
-        SentimentRecord(**{**_valid(), "company_news_score": -0.5})
+def test_company_news_score_signed_accepted():
+    # Alpha Vantage sentiment scores are signed in [-1, 1] (negative = bearish)
+    rec = SentimentRecord(**{**_valid(), "company_news_score": -0.5})
+    assert rec.company_news_score == -0.5
 
 
 def test_buzz_weekly_average_zero_accepted():

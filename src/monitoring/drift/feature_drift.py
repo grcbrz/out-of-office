@@ -54,7 +54,7 @@ def detect_feature_drift(
         ks_pvalue=float(ks_pvalue),
         psi=float(psi),
         severity=severity,
-        triggered=triggered,
+        triggered=bool(triggered),
     )
 
 

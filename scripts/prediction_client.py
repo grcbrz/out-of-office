@@ -20,7 +20,7 @@ class PredictionClient:
     def run(self, run_date: date) -> dict:
         """Trigger prediction for the full universe on run_date."""
         headers = {"Authorization": f"Bearer {self._token}"}
-        payload = {"date": str(run_date)}
+        payload = {"predict_date": str(run_date)}
         with httpx.Client(base_url=self._base_url, timeout=120) as client:
             resp = client.post("/predict", json=payload, headers=headers)
             resp.raise_for_status()

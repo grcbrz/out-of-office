@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException
@@ -19,6 +20,23 @@ logger = logging.getLogger(__name__)
 
 _loader = ArtifactLoader()
 _metrics = MetricsStore()
+_FEATURES_DIR = Path("data/features")
+
+
+def _load_feature_row(ticker: str, run_date: dt.date) -> pd.Series | None:
+    """Return the most-recent feature row for ticker on or before run_date."""
+    ticker_dir = _FEATURES_DIR / ticker
+    if not ticker_dir.exists():
+        return None
+    candidates = sorted(ticker_dir.glob("*.csv"))
+    target = str(run_date)
+    files = [f for f in candidates if f.stem <= target]
+    if not files:
+        return None
+    df = pd.read_csv(files[-1])
+    if df.empty:
+        return None
+    return df.iloc[-1]
 
 
 @asynccontextmanager
@@ -74,11 +92,11 @@ def predict(request: PredictRequest, _: str = Depends(require_auth)):
     predictions: list[PredictionItem] = []
     warnings: list[str] = []
 
-    from src.features.schema import FEATURE_COLUMNS
-
     for ticker in tickers:
-        # Stub: in production, load actual feature row from data/features/{ticker}/{run_date}.csv
-        feature_row = pd.Series({c: 0.0 for c in FEATURE_COLUMNS if c != "ticker_id"})
+        feature_row = _load_feature_row(ticker, run_date)
+        if feature_row is None:
+            warnings.append(f"{ticker}: no feature data for {run_date} — skipping")
+            continue
 
         try:
             signal, confidence = engine.predict(ticker, feature_row)

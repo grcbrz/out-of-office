@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import random
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -49,14 +48,12 @@ class TrainingPipeline:
         random_seed: int = 42,
         production_dir: Path = _PRODUCTION_DIR,
         fold_artifact_dir: Path = _FOLD_ARTIFACT_DIR,
-        n_workers: int = 3,
     ) -> None:
         self._train_window = train_window
         self._step_size = step_size
         self._random_seed = random_seed
         self._production_dir = production_dir
         self._fold_artifact_dir = fold_artifact_dir
-        self._n_workers = n_workers
 
     def run(self, global_df: pd.DataFrame) -> None:
         """Run full walk-forward training harness on the global feature dataset."""
@@ -152,27 +149,16 @@ class TrainingPipeline:
         fold_index: int,
         artifact_dir: Path,
     ) -> list[ModelResult]:
-        """Train three models in parallel processes, return results."""
-        model_names = ["nhits", "patchtst", "autoformer"]
+        """Train three models sequentially, return results."""
         results: list[ModelResult] = []
-
-        with ProcessPoolExecutor(max_workers=self._n_workers) as executor:
-            futures = {
-                executor.submit(
-                    _train_one_model, name, train_df, val_df, class_weights, fold_index, artifact_dir,
-                ): name
-                for name in model_names
-            }
-            for future in as_completed(futures):
-                name = futures[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                    logger.info("fold %d %s f1=%.3f", fold_index, name, result.f1_macro)
-                except Exception as exc:
-                    logger.error("fold %d %s failed: %s", fold_index, name, exc)
-                    results.append(ModelResult(model_name=name, f1_macro=0.0))
-
+        for name in ["nhits", "patchtst", "autoformer"]:
+            try:
+                result = _train_one_model(name, train_df, val_df, class_weights, fold_index, artifact_dir)
+                logger.info("fold %d %s f1=%.3f", fold_index, name, result.f1_macro)
+                results.append(result)
+            except Exception as exc:
+                logger.error("fold %d %s failed: %s", fold_index, name, exc)
+                results.append(ModelResult(model_name=name, f1_macro=0.0))
         return results
 
     def _compute_fold_metrics(

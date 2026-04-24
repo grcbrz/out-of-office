@@ -74,7 +74,11 @@ class EvaluationPipeline:
     def _load_production_metadata(self) -> dict:
         if not self._production_dir.exists():
             raise EvaluationDataError(f"no production directory at {self._production_dir}")
-        model_dirs = [p for p in self._production_dir.iterdir() if p.is_dir()]
+        model_dirs = sorted(
+            [p for p in self._production_dir.iterdir() if p.is_dir()],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
         if not model_dirs:
             raise EvaluationDataError(f"no production model under {self._production_dir}")
         metadata_path = model_dirs[0] / "metadata.json"

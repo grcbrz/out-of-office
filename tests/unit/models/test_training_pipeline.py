@@ -124,7 +124,6 @@ def test_run_writes_artifact_and_monitoring_reference(tmp_path):
         train_window=120, step_size=20,
         production_dir=tmp_path / "prod",
         fold_artifact_dir=tmp_path / "folds",
-        n_workers=1,
     )
 
     # Stub _train_all_models so the run completes fast (skip parallel sklearn training).

@@ -81,6 +81,8 @@ make serve-uninstall   # Remove the service
 ```bash
 make nightly
 # Or with an explicit start date:
+make nightly START_DATE=2024-04-23
+# Or calling the script directly:
 .venv/bin/python scripts/run_nightly.py --start-date 2024-04-23
 ```
 
@@ -91,8 +93,8 @@ The nightly pipeline should be run **after market close** (US Eastern). Grouped 
 On a fresh install the model must be trained before the server can serve predictions:
 
 ```bash
-make run &           # start server in background (will return 503 initially)
-make nightly --start-date 2024-01-02   # ingest 2 years + train + evaluate
+make run &                               # start server in background (will return 503 initially)
+make nightly START_DATE=2024-01-02      # ingest 2 years + train + evaluate
 # once training completes, restart the server to pick up the new artifact
 ```
 
@@ -152,7 +154,7 @@ Per-prediction explanations use SHAP TreeExplainer for tree-based models (Autofo
 ## Development
 
 ```bash
-make test        # Run full test suite (242 tests)
+make test        # Run full test suite (246 tests)
 make coverage    # Tests + coverage report (≥85%; currently ~88%)
 make lint        # ruff + mypy (zero errors)
 make format      # black

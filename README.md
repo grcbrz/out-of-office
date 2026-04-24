@@ -86,6 +86,16 @@ make nightly
 
 The nightly pipeline should be run **after market close** (US Eastern). Grouped daily data from Massive is typically published 15–30 minutes after 4 PM ET. If run earlier, the pipeline automatically falls back to the previous trading day's universe.
 
+### First run
+
+On a fresh install the model must be trained before the server can serve predictions:
+
+```bash
+make run &           # start server in background (will return 503 initially)
+make nightly --start-date 2024-01-02   # ingest 2 years + train + evaluate
+# once training completes, restart the server to pick up the new artifact
+```
+
 ---
 
 ## API
@@ -108,19 +118,25 @@ Authorization: Bearer <API_TOKEN>
 curl -X POST http://127.0.0.1:8000/predict \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"tickers": ["AAPL", "MSFT"], "predict_date": "2026-04-23"}'
+  -d '{"tickers": ["AAPL", "MSFT"], "predict_date": "2026-04-24"}'
 ```
 
 ```json
 {
-  "run_date": "2026-04-23",
-  "model": "nhits",
+  "run_date": "2026-04-24",
+  "model": "autoformer",
   "predictions": [
     {
       "ticker": "AAPL",
       "signal": "BUY",
-      "confidence": 0.68,
-      "explanation": {"top_features": [], "attention_weights": null, "explainer_used": "shap"}
+      "confidence": 0.62,
+      "explanation": {
+        "top_features": [
+          {"feature": "macd", "shap_value": 0.041},
+          {"feature": "log_return", "shap_value": 0.033}
+        ],
+        "explainer_used": "TreeExplainer"
+      }
     }
   ],
   "warnings": []
@@ -129,16 +145,19 @@ curl -X POST http://127.0.0.1:8000/predict \
 
 Omit `tickers` to get signals for the full 30-ticker universe. Omit `predict_date` to default to today.
 
+Per-prediction explanations use SHAP TreeExplainer for tree-based models (Autoformer/PatchTST) and KernelExplainer fallback for MLP (N-HiTS).
+
 ---
 
 ## Development
 
 ```bash
-make test        # Run full test suite
-make coverage    # Tests + coverage report (target ≥85%)
-make lint        # ruff + mypy
+make test        # Run full test suite (242 tests)
+make coverage    # Tests + coverage report (≥85%; currently ~88%)
+make lint        # ruff + mypy (zero errors)
 make format      # black
 make audit       # pip-audit security scan
+make train       # Re-run training on existing data/features/
 make notebook    # Launch Jupyter for EDA
 ```
 
@@ -163,7 +182,7 @@ configs/            — YAML configs for all pipeline stages
 scripts/            — CLI entry points and launchd plist
 specs/              — Spec-driven design documents (01–07)
 data/               — Raw, processed, features, predictions, monitoring outputs
-models/production/  — Single production artifact (winning model)
+models/production/  — Single production artifact (latest winning model only)
 reports/            — Evaluation and monitoring reports
 ```
 
@@ -192,15 +211,21 @@ Alpha Vantage returns a news article feed. For each ticker, the pipeline:
 
 ## Models
 
-Candidates evaluated in walk-forward cross-validation (252-day train window, 21-day step):
+Three candidates are evaluated in walk-forward cross-validation (252-day train window, 21-day step, minimum 3 folds). The model with the highest F1-macro on the final fold wins and is written exclusively to `models/production/` — previous winners are evicted automatically.
 
-1. **N-HiTS** — default winner; efficient multi-horizon model with seasonality decomposition
-2. **PatchTST** — patch-based transformer; strong on local financial patterns
-3. **Autoformer** — included when N-HiTS and PatchTST underperform
+| Model | Sklearn backend | Notes |
+|---|---|---|
+| **N-HiTS** | MLPClassifier | Multi-horizon; strong on seasonality decomposition |
+| **PatchTST** | GradientBoostingClassifier | Patch-based; strong on local financial patterns |
+| **Autoformer** | ExtraTreesClassifier | Included when the above underperform |
 
-The model with the highest F1-macro across folds wins. Ties broken in the order above. The winning artifact is saved to `models/production/`.
+> The sklearn backends are a pragmatic substitute until `torch` + `neuralforecast` are installed. The wrapper interface (`train` / `predict` / `predict_proba` / `save` / `load`) is stable — swapping in the real architectures requires only replacing the model internals.
 
-Quality gate (evaluated after each training run):
+Ties in F1-macro are broken in the order N-HiTS → PatchTST → Autoformer.
+
+### Quality gate
+
+Evaluated after each training run against the production fold:
 
 | Metric | Threshold |
 |---|---|
@@ -209,18 +234,23 @@ Quality gate (evaluated after each training run):
 | Hit rate | ≥ 0.50 |
 | Max signal class share | ≤ 80% |
 
+If the gate fails, the `retraining_required` flag stays set in `data/monitoring/status.json` and training is re-attempted on the next nightly run.
+
 ---
 
 ## Monitoring
 
-Run nightly before the training decision:
+Run nightly before the training decision. Results written to `reports/monitoring/monitoring_history.csv`.
 
-- **Feature drift** — KS test + PSI per feature; both must breach thresholds to trigger retraining
-- **Prediction drift** — chi-squared test on signal distribution; also flags degenerate output (>80% one class)
-- **Performance degradation** — rolling 21-day hit rate; two consecutive windows below 45% triggers retraining
-- **Evidently reports** — HTML + JSON generated every 7 runs to `reports/monitoring/`
+| Check | Method | Trigger |
+|---|---|---|
+| Feature drift | KS test + PSI on continuous features | Both KS p-value < 0.05 **and** PSI ≥ 0.20 |
+| Prediction drift | Chi-squared on signal distribution | p-value < 0.05, or any class ≥ 80% |
+| Performance degradation | Rolling 21-day hit rate | Two consecutive windows below 45% |
 
-Alert files written to `data/monitoring/alerts/{date}.json`. Retraining state persisted in `data/monitoring/status.json`.
+Calendrical and boolean features (`month`, `week_of_year`, `day_of_week`, `is_month_end`, flag columns) are excluded from KS/PSI checks — their distributions shift with the calendar window, not with regime change.
+
+Alert files written to `data/monitoring/alerts/{date}.json`. Retraining state persisted in `data/monitoring/status.json`. Evidently HTML + JSON reports generated every 7 runs to `reports/monitoring/`.
 
 ---
 

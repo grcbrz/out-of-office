@@ -13,7 +13,6 @@ from src.serving.inference import InferenceEngine
 from src.serving.loader import ArtifactLoader
 from src.serving.metrics_store import MetricsStore
 from src.serving.persistence import append_prediction_csv
-from src.serving.routers.health import get_health_response
 from src.serving.schemas import PredictRequest, PredictResponse, PredictionItem, PredictionRecord
 
 logger = logging.getLogger(__name__)
@@ -34,7 +33,15 @@ app = FastAPI(title="OOO API", lifespan=lifespan)
 
 @app.get("/health")
 def health(_: str = Depends(require_auth)):
-    return get_health_response(_loader)
+    if not _loader.is_loaded:
+        raise HTTPException(status_code=503, detail={"status": "degraded", "reason": "no model loaded"})
+    return {
+        "status": "ok",
+        "model": _loader.model_name,
+        "model_date": _loader.metadata.get("fold_end_date"),
+        "production_fold_f1_macro": _loader.metadata.get("f1_macro"),
+        "quality_gate_passed": _loader.metadata.get("quality_gate_passed", True),
+    }
 
 
 @app.get("/metrics")

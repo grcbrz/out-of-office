@@ -113,10 +113,23 @@ def predict(request: PredictRequest, _: str = Depends(require_auth)):
         predictions.append(item)
         _metrics.record(ticker, signal)
 
+        top = explanation.get("top_features", [])
         record = PredictionRecord(
             run_date=run_date, ticker=ticker, signal=signal,
             confidence=confidence, model=_loader.model_name or "unknown",
-            explainer_used=explanation.get("explainer_used", "none"), predicted_at=dt.datetime.now(dt.timezone.utc),
+            explainer_used=explanation.get("explainer_used", "none"),
+            predicted_at=dt.datetime.now(dt.timezone.utc),
+            sentiment_available=bool(feature_row.get("sentiment_available", False)),
+            top_feature_1=top[0]["feature"] if len(top) > 0 else None,
+            top_feature_2=top[1]["feature"] if len(top) > 1 else None,
+            top_feature_3=top[2]["feature"] if len(top) > 2 else None,
+            top_feature_4=top[3]["feature"] if len(top) > 3 else None,
+            top_feature_5=top[4]["feature"] if len(top) > 4 else None,
+            shap_1=top[0]["shap_value"] if len(top) > 0 else None,
+            shap_2=top[1]["shap_value"] if len(top) > 1 else None,
+            shap_3=top[2]["shap_value"] if len(top) > 2 else None,
+            shap_4=top[3]["shap_value"] if len(top) > 3 else None,
+            shap_5=top[4]["shap_value"] if len(top) > 4 else None,
         )
         append_prediction_csv(record)
 

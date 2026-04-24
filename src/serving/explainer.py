@@ -61,7 +61,7 @@ class ServingExplainer:
             return {"top_features": top_features, "explainer_used": "TreeExplainer"}
 
         except Exception as e:
-            logger.debug("SHAP explanation failed: %s", e)
+            logger.warning("SHAP explanation failed: %s", e)
             return {"top_features": [], "explainer_used": "none"}
 
     def _init_explainer(self) -> None:
@@ -78,5 +78,5 @@ class ServingExplainer:
                     np.zeros((10, len(self._trained_features))),
                 )
         except Exception as e:
-            logger.debug("Could not initialize SHAP explainer: %s", e)
+            logger.warning("Could not initialize SHAP explainer: %s", e)
             self._shap_explainer = None

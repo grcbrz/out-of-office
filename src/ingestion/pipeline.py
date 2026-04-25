@@ -154,6 +154,9 @@ class IngestionPipeline:
             return True
         try:
             records = self._polygon.fetch_ohlcv(ticker, start_date, run_date)
+            if not records:
+                logger.warning("ohlcv empty for %s %s (market closed or data not yet published)", ticker, run_date)
+                return False
             rows = [self._ohlcv_to_dict(r) for r in records]
             write_csv(dest, rows)
             return True

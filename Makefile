@@ -36,10 +36,10 @@ run: ## Start FastAPI server (foreground)
 serve-install: ## Install launchd plist for macOS background autostart
 	mkdir -p ~/Library/LaunchAgents
 	cp scripts/com.stockrecommender.api.plist ~/Library/LaunchAgents/
-	launchctl load ~/Library/LaunchAgents/com.stockrecommender.api.plist
+	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.stockrecommender.api.plist
 
 serve-uninstall: ## Unload and remove launchd plist
-	launchctl unload ~/Library/LaunchAgents/com.stockrecommender.api.plist
+	launchctl bootout gui/$$(id -u) ~/Library/LaunchAgents/com.stockrecommender.api.plist
 	rm -f ~/Library/LaunchAgents/com.stockrecommender.api.plist
 
 train: ## Run training harness on existing data/features/

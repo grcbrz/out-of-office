@@ -41,6 +41,8 @@ def _load_feature_row(ticker: str, run_date: dt.date) -> pd.Series | None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from dotenv import load_dotenv
+    load_dotenv()
     validate_token_at_startup()
     _loader.load()
     yield

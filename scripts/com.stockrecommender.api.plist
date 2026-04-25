@@ -21,11 +21,6 @@
     <key>WorkingDirectory</key>
     <string>/Users/gracebraz/code/grcbrz/out-of-office</string>
 
-    <key>EnvironmentVariables</key>
-    <dict>
-        <!-- Load secrets from .env at startup via the app itself (python-dotenv) -->
-    </dict>
-
     <key>RunAtLoad</key>
     <true/>
 

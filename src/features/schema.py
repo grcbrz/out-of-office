@@ -15,7 +15,7 @@ FEATURE_COLUMNS: list[str] = [
     "volume_lag1", "volume_lag2", "volume_lag3",
     "close_zscore", "volume_zscore",
     "day_of_week", "week_of_year", "month", "is_month_end",
-    "bullish_percent", "bearish_percent", "company_news_score", "buzz_weekly_average",
+    "bullish_percent", "bearish_percent", "company_news_score", "article_count",
     "sentiment_available",
     "close_outlier_flag", "volume_outlier_flag",
     "ticker_id",
@@ -26,6 +26,9 @@ FEATURE_COLUMNS: list[str] = [
 # and the ticker_id categorical encoding (PSI on integer IDs is meaningless).
 _NON_CONTINUOUS_FEATURES = {
     "day_of_week", "week_of_year", "month", "is_month_end",
+    # Sentiment columns: null for all historical data and sparse in recent data.
+    # KS/PSI on mostly-null columns produces unstable, meaningless drift signals.
+    "bullish_percent", "bearish_percent", "company_news_score", "article_count",
     "sentiment_available", "close_outlier_flag", "volume_outlier_flag",
     "ticker_id",
 }
@@ -72,7 +75,7 @@ class FeatureRecord(BaseModel):
     bullish_percent: float | None = None
     bearish_percent: float | None = None
     company_news_score: float | None = None
-    buzz_weekly_average: float | None = None
+    article_count: float | None = None
     sentiment_available: bool = False
     # Outlier flags passthrough
     close_outlier_flag: bool = False

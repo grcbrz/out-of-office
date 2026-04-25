@@ -50,7 +50,7 @@ def test_ohlcv_failure_excludes_ticker_and_writes_alert(tmp_path):
     pipeline._alphavantage.fetch_sentiment.return_value = MagicMock(
         ticker="MSFT", date=date(2024, 1, 2),
         bullish_percent=None, bearish_percent=None,
-        company_news_score=None, buzz_weekly_average=None,
+        company_news_score=None, article_count=None,
     )
     pipeline.run(date(2024, 1, 2), date(2024, 1, 2))
     alert_path = tmp_path / "data" / "raw" / "alerts" / "2024-01-02.json"
@@ -60,7 +60,7 @@ def test_ohlcv_failure_excludes_ticker_and_writes_alert(tmp_path):
     assert "MSFT" in alert["ohlcv_failed"]
 
 
-def test_sentiment_failure_writes_nulls_ohlcv_unaffected(tmp_path):
+def test_sentiment_failure_leaves_no_file_so_next_run_retries(tmp_path):
     from src.ingestion.models.ohlcv import OHLCVRecord
 
     pipeline = _make_pipeline(tmp_path)
@@ -78,8 +78,10 @@ def test_sentiment_failure_writes_nulls_ohlcv_unaffected(tmp_path):
     ohlcv_path = tmp_path / "data" / "raw" / "ohlcv" / "AAPL" / "2024-01-02.csv"
     assert ohlcv_path.exists()
 
+    # No file written on failure — next nightly will retry instead of seeing a
+    # permanently-null sentinel and skipping forever.
     sentiment_path = tmp_path / "data" / "raw" / "sentiment" / "AAPL" / "2024-01-02.csv"
-    assert sentiment_path.exists()
+    assert not sentiment_path.exists()
 
 
 def test_idempotency_skips_existing_files(tmp_path):

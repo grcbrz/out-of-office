@@ -105,7 +105,7 @@ class AlphaVantageClient:
             bullish_percent=round(bullish_count / total, 4),
             bearish_percent=round(bearish_count / total, 4),
             company_news_score=round(sum(scores) / total, 4),
-            buzz_weekly_average=float(total),
+            article_count=float(total),
         )
 
     @staticmethod

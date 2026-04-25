@@ -21,7 +21,7 @@ class ProcessedRecord(BaseModel):
     bullish_percent: float | None = None
     bearish_percent: float | None = None
     company_news_score: float | None = None
-    buzz_weekly_average: float | None = None
+    article_count: float | None = None
     sentiment_available: bool = False
     is_trading_day: bool = True
     imputed_close: bool = False

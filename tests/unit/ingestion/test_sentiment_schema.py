@@ -15,7 +15,7 @@ def _valid() -> dict:
         "bullish_percent": 0.6,
         "bearish_percent": 0.4,
         "company_news_score": 1.2,
-        "buzz_weekly_average": 0.8,
+        "article_count": 0.8,
     }
 
 
@@ -29,7 +29,7 @@ def test_all_nullable_fields_none():
     assert rec.bullish_percent is None
     assert rec.bearish_percent is None
     assert rec.company_news_score is None
-    assert rec.buzz_weekly_average is None
+    assert rec.article_count is None
 
 
 def test_bullish_percent_out_of_range_rejected():
@@ -48,6 +48,6 @@ def test_company_news_score_signed_accepted():
     assert rec.company_news_score == -0.5
 
 
-def test_buzz_weekly_average_zero_accepted():
-    rec = SentimentRecord(**{**_valid(), "buzz_weekly_average": 0.0})
-    assert rec.buzz_weekly_average == 0.0
+def test_article_count_zero_accepted():
+    rec = SentimentRecord(**{**_valid(), "article_count": 0.0})
+    assert rec.article_count == 0.0

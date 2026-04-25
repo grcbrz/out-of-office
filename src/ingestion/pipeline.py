@@ -175,13 +175,11 @@ class IngestionPipeline:
             write_csv(dest, [row])
             all_null = all(
                 row[f] in (None, "") for f in
-                ["bullish_percent", "bearish_percent", "company_news_score", "buzz_weekly_average"]
+                ["bullish_percent", "bearish_percent", "company_news_score", "article_count"]
             )
             return "null" if all_null else "ok"
         except Exception as exc:
             logger.error("sentiment fetch failed for %s: %s", ticker, exc)
-            null_record = SentimentRecord(ticker=ticker, date=run_date)
-            write_csv(dest, [self._sentiment_to_dict(null_record)])
             return "failed"
 
     def _is_trading_day(self, d: date) -> bool:
@@ -211,5 +209,5 @@ class IngestionPipeline:
             "bullish_percent": r.bullish_percent if r.bullish_percent is not None else "",
             "bearish_percent": r.bearish_percent if r.bearish_percent is not None else "",
             "company_news_score": r.company_news_score if r.company_news_score is not None else "",
-            "buzz_weekly_average": r.buzz_weekly_average if r.buzz_weekly_average is not None else "",
+            "article_count": r.article_count if r.article_count is not None else "",
         }

@@ -15,7 +15,7 @@ _CORE_FEATURES = [
     "day_of_week", "week_of_year", "month",
 ]
 _NULLABLE_FEATURES = {"vwap_ratio", "bullish_percent", "bearish_percent",
-                      "company_news_score", "buzz_weekly_average"}
+                      "company_news_score", "article_count"}
 
 
 class LookaheadBiasError(Exception):

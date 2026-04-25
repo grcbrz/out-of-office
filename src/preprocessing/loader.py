@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 _OHLCV_FIELDS = ["ticker", "date", "open", "high", "low", "close", "volume", "vwap"]
 _SENTIMENT_FIELDS = [
     "ticker", "date", "bullish_percent", "bearish_percent",
-    "company_news_score", "buzz_weekly_average",
+    "company_news_score", "article_count",
 ]
 
 
@@ -74,5 +74,5 @@ def _coerce_sentiment(row: dict) -> dict:
         "bullish_percent": _opt_float(row.get("bullish_percent")),
         "bearish_percent": _opt_float(row.get("bearish_percent")),
         "company_news_score": _opt_float(row.get("company_news_score")),
-        "buzz_weekly_average": _opt_float(row.get("buzz_weekly_average")),
+        "article_count": _opt_float(row.get("article_count")),
     }

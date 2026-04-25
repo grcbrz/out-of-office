@@ -51,7 +51,7 @@ def test_sentiment_load_valid(tmp_path):
     _write_csv(path, [{
         "ticker": "AAPL", "date": "2024-01-02",
         "bullish_percent": "0.6", "bearish_percent": "0.4",
-        "company_news_score": "1.2", "buzz_weekly_average": "0.8",
+        "company_news_score": "1.2", "article_count": "0.8",
     }])
     records = load_sentiment(path)
     assert len(records) == 1
@@ -63,7 +63,7 @@ def test_sentiment_load_null_fields(tmp_path):
     _write_csv(path, [{
         "ticker": "AAPL", "date": "2024-01-02",
         "bullish_percent": "", "bearish_percent": "",
-        "company_news_score": "", "buzz_weekly_average": "",
+        "company_news_score": "", "article_count": "",
     }])
     records = load_sentiment(path)
     assert len(records) == 1

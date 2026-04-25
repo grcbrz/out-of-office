@@ -46,7 +46,7 @@ def _write_processed_csv(processed_dir: Path, ticker: str, run_date: date, n: in
             "bullish_percent": None,
             "bearish_percent": None,
             "company_news_score": None,
-            "buzz_weekly_average": None,
+            "article_count": None,
             "sentiment_available": False,
             "is_trading_day": True,
             "imputed_close": False,

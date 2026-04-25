@@ -34,6 +34,7 @@ run: ## Start FastAPI server (foreground)
 	$(PYTHON) -m uvicorn src.serving.app:app --host 127.0.0.1 --port 8000 --log-level info
 
 serve-install: ## Install launchd plist for macOS background autostart
+	mkdir -p ~/Library/LaunchAgents
 	cp scripts/com.stockrecommender.api.plist ~/Library/LaunchAgents/
 	launchctl load ~/Library/LaunchAgents/com.stockrecommender.api.plist
 

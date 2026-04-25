@@ -35,7 +35,9 @@ run: ## Start FastAPI server (foreground)
 
 serve-install: ## Install launchd plist for macOS background autostart
 	mkdir -p ~/Library/LaunchAgents
-	cp scripts/com.stockrecommender.api.plist ~/Library/LaunchAgents/
+	/bin/cp -f scripts/com.stockrecommender.api.plist ~/Library/LaunchAgents/
+	launchctl bootout gui/$$(id -u)/com.stockrecommender.api 2>/dev/null || true
+	sleep 1
 	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.stockrecommender.api.plist
 
 serve-uninstall: ## Unload and remove launchd plist

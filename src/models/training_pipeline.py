@@ -68,10 +68,12 @@ class TrainingPipeline:
             raise ValueError(f"only {len(folds)} folds available, minimum is {_MIN_FOLDS}")
 
         fold_metrics: list[dict] = []
-        final_winner: ModelResult | None = None
+        # Accumulate f1 scores per model across all folds for aggregate selection
+        model_f1_history: dict[str, list[float]] = {"nhits": [], "patchtst": [], "autoformer": []}
+        # Final-fold results for all models — used to pick the artifact of the aggregate winner
+        final_fold_results: dict[str, ModelResult] = {}
         final_fold: Fold | None = None
         final_preparer: DataPreparer | None = None
-        final_metrics: dict | None = None
 
         for fold in folds:
             preparer_copy = DataPreparer()
@@ -86,17 +88,35 @@ class TrainingPipeline:
             results = self._train_all_models(
                 train_df, val_df, class_weights, fold.index, self._fold_artifact_dir,
             )
-            winner = select_winner(results)
-            logger.info("fold %d winner: %s (f1=%.3f)", fold.index, winner.model_name, winner.f1_macro)
+            fold_winner = select_winner(results)
+            logger.info("fold %d winner: %s (f1=%.3f)", fold.index, fold_winner.model_name, fold_winner.f1_macro)
 
-            metrics = self._compute_fold_metrics(fold.index, winner, val_df)
+            for r in results:
+                model_f1_history[r.model_name].append(r.f1_macro)
+
+            metrics = self._compute_fold_metrics(fold.index, fold_winner, val_df)
             fold_metrics.append(metrics)
 
             if fold.is_final:
-                final_winner = winner
+                final_fold_results = {r.model_name: r for r in results}
                 final_fold = fold
                 final_preparer = preparer_copy
-                final_metrics = metrics
+
+        # Select production model by mean F1 across all folds (not just the last fold)
+        mean_f1 = {name: (sum(scores) / len(scores) if scores else 0.0)
+                   for name, scores in model_f1_history.items()}
+        logger.info("mean F1 across folds — nhits: %.3f  patchtst: %.3f  autoformer: %.3f",
+                    mean_f1["nhits"], mean_f1["patchtst"], mean_f1["autoformer"])
+        aggregate_winner = select_winner([
+            ModelResult(model_name=name, f1_macro=f1)
+            for name, f1 in mean_f1.items()
+        ])
+        final_winner = final_fold_results.get(aggregate_winner.model_name)
+        final_metrics = (
+            self._compute_fold_metrics(final_fold.index, final_winner, final_fold.val)
+            if final_winner and final_fold is not None else None
+        )
+        logger.info("aggregate winner: %s (mean f1=%.3f)", aggregate_winner.model_name, aggregate_winner.f1_macro)
 
         if final_winner and final_preparer and final_metrics and final_fold:
             aggregated = aggregate_across_folds(fold_metrics)

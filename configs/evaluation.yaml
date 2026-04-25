@@ -1,8 +1,8 @@
 quality_gates:
-  f1_macro_min: 0.35
-  mcc_min: 0.05
-  hit_rate_min: 0.50
-  max_signal_concentration: 0.80   # no single class > 80% of predictions
+  f1_macro_min: 0.40
+  mcc_min: 0.10
+  hit_rate_min: 0.52
+  max_signal_concentration: 0.70   # no single class > 70% of predictions
 
 shap:
   background_sample_size: 100      # for KernelExplainer fallback

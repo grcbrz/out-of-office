@@ -7,12 +7,11 @@ from pathlib import Path
 import pandas as pd
 
 from src.features.schema import FEATURE_COLUMNS
+from src.models.architectures.base import TARGET_ENCODING
 
 logger = logging.getLogger(__name__)
 
 _TICKER_MAP_PATH = Path("configs/ticker_map.json")
-
-TARGET_ENCODING = {"SELL": 0, "HOLD": 1, "BUY": 2}
 
 
 class TrainingDataError(Exception):

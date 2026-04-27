@@ -24,7 +24,7 @@ data/monitoring/
 *.db
 
 # Models and experiment tracking
-models/production/
+models/
 mlruns/
 
 # Reports (generated; not source)

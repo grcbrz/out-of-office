@@ -154,7 +154,7 @@ Per-prediction explanations use SHAP TreeExplainer for tree-based models (Autofo
 ## Development
 
 ```bash
-make test        # Run full test suite (246 tests)
+make test        # Run full test suite (247 tests)
 make coverage    # Tests + coverage report (≥85%; currently ~88%)
 make lint        # ruff + mypy (zero errors)
 make format      # black
@@ -195,7 +195,7 @@ reports/            — Evaluation and monitoring reports
 | Source | Data | Plan |
 |---|---|---|
 | [Massive](https://massive.com) (formerly Polygon.io) | OHLCV, universe resolution (top 30 by volume) | Basic (100 calls/min) |
-| [Alpha Vantage](https://www.alphavantage.co) | News sentiment — aggregated per-ticker score from article feed | Premium recommended |
+| [Alpha Vantage](https://www.alphavantage.co) | News sentiment — aggregated per-ticker score from article feed | Free tier: 25 calls/day (rate limiter: 5/min); Premium: 75/min |
 
 **Finnhub** was used for sentiment in early development but dropped — the `news-sentiment` endpoint requires a paid plan and is no longer part of this pipeline.
 
@@ -207,13 +207,13 @@ Alpha Vantage returns a news article feed. For each ticker, the pipeline:
 1. Filters articles where the ticker's `relevance_score ≥ 0.1`
 2. Computes `bullish_percent` / `bearish_percent` from per-article sentiment labels
 3. Computes `company_news_score` as the mean `ticker_sentiment_score` (range −1 to +1)
-4. Records `buzz_weekly_average` as the count of relevant articles
+4. Records `article_count` as the count of relevant articles in the 24h window
 
 ---
 
 ## Models
 
-Three candidates are evaluated in walk-forward cross-validation (252-day train window, 21-day step, minimum 3 folds). The model with the highest F1-macro on the final fold wins and is written exclusively to `models/production/` — previous winners are evicted automatically.
+Three candidates are evaluated in walk-forward cross-validation (252-day train window, 21-day step, minimum 3 folds). The model with the highest **mean F1-macro across all folds** wins and is written exclusively to `models/production/` using its final-fold artifact — previous winners are evicted automatically.
 
 | Model | Sklearn backend | Notes |
 |---|---|---|
@@ -221,7 +221,7 @@ Three candidates are evaluated in walk-forward cross-validation (252-day train w
 | **PatchTST** | GradientBoostingClassifier | Patch-based; strong on local financial patterns |
 | **Autoformer** | ExtraTreesClassifier | Included when the above underperform |
 
-> The sklearn backends are a pragmatic substitute until `torch` + `neuralforecast` are installed. The wrapper interface (`train` / `predict` / `predict_proba` / `save` / `load`) is stable — swapping in the real architectures requires only replacing the model internals.
+> The sklearn backends are a pragmatic substitute until `torch` + `neuralforecast` are installed. All shared logic lives in `BaseModelWrapper` (`src/models/architectures/base.py`); each wrapper implements only `_build_model()`. Swapping in the real architecture requires replacing that one method — nothing else changes.
 
 Ties in F1-macro are broken in the order N-HiTS → PatchTST → Autoformer.
 
@@ -231,10 +231,10 @@ Evaluated after each training run against the production fold:
 
 | Metric | Threshold |
 |---|---|
-| F1-macro | ≥ 0.35 |
-| MCC | ≥ 0.05 |
-| Hit rate | ≥ 0.50 |
-| Max signal class share | ≤ 80% |
+| F1-macro | ≥ 0.40 |
+| MCC | ≥ 0.10 |
+| Hit rate | ≥ 0.52 |
+| Max signal class share | ≤ 70% |
 
 If the gate fails, the `retraining_required` flag stays set in `data/monitoring/status.json` and training is re-attempted on the next nightly run.
 
@@ -250,7 +250,10 @@ Run nightly before the training decision. Results written to `reports/monitoring
 | Prediction drift | Chi-squared on signal distribution | p-value < 0.05, or any class ≥ 80% |
 | Performance degradation | Rolling 21-day hit rate | Two consecutive windows below 45% |
 
-Calendrical and boolean features (`month`, `week_of_year`, `day_of_week`, `is_month_end`, flag columns) are excluded from KS/PSI checks — their distributions shift with the calendar window, not with regime change.
+Excluded from KS/PSI checks:
+- **Calendrical** (`month`, `week_of_year`, `day_of_week`, `is_month_end`) — distributions shift with the calendar window, not regime change
+- **Sentiment numeric columns** (`bullish_percent`, `bearish_percent`, `company_news_score`, `article_count`) — null for 100% of historical training data; KS/PSI on mostly-null columns produces meaningless signals
+- **Boolean flags** (`close_outlier_flag`, `volume_outlier_flag`, `sentiment_available`) and **categorical** (`ticker_id`)
 
 Alert files written to `data/monitoring/alerts/{date}.json`. Retraining state persisted in `data/monitoring/status.json`. Evidently HTML + JSON reports generated every 7 runs to `reports/monitoring/`.
 

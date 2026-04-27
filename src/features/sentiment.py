@@ -4,7 +4,8 @@ import pandas as pd
 
 _SENTIMENT_COLS = [
     "bullish_percent", "bearish_percent", "company_news_score",
-    "article_count", "sentiment_available",
+    "article_count", "positive_insights", "negative_insights", "neutral_insights",
+    "sentiment_available",
 ]
 
 

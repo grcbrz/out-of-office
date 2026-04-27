@@ -13,6 +13,7 @@ _OHLCV_FIELDS = ["ticker", "date", "open", "high", "low", "close", "volume", "vw
 _SENTIMENT_FIELDS = [
     "ticker", "date", "bullish_percent", "bearish_percent",
     "company_news_score", "article_count",
+    "positive_insights", "negative_insights", "neutral_insights",
 ]
 
 
@@ -68,6 +69,11 @@ def _coerce_sentiment(row: dict) -> dict:
             return None
         return float(val)
 
+    def _opt_int(val: str | None) -> int | None:
+        if val is None or val in ("", "None"):
+            return None
+        return int(float(val))
+
     return {
         "ticker": row["ticker"],
         "date": row["date"],
@@ -75,4 +81,7 @@ def _coerce_sentiment(row: dict) -> dict:
         "bearish_percent": _opt_float(row.get("bearish_percent")),
         "company_news_score": _opt_float(row.get("company_news_score")),
         "article_count": _opt_float(row.get("article_count")),
+        "positive_insights": _opt_int(row.get("positive_insights")),
+        "negative_insights": _opt_int(row.get("negative_insights")),
+        "neutral_insights": _opt_int(row.get("neutral_insights")),
     }

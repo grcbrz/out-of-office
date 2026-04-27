@@ -30,6 +30,9 @@ def test_all_nullable_fields_none():
     assert rec.bearish_percent is None
     assert rec.company_news_score is None
     assert rec.article_count is None
+    assert rec.positive_insights is None
+    assert rec.negative_insights is None
+    assert rec.neutral_insights is None
 
 
 def test_bullish_percent_out_of_range_rejected():
@@ -51,3 +54,15 @@ def test_company_news_score_signed_accepted():
 def test_article_count_zero_accepted():
     rec = SentimentRecord(**{**_valid(), "article_count": 0.0})
     assert rec.article_count == 0.0
+
+
+def test_insight_counts_accepted():
+    rec = SentimentRecord(**{**_valid(), "positive_insights": 3, "negative_insights": 1, "neutral_insights": 2})
+    assert rec.positive_insights == 3
+    assert rec.negative_insights == 1
+    assert rec.neutral_insights == 2
+
+
+def test_negative_insight_count_rejected():
+    with pytest.raises(ValidationError):
+        SentimentRecord(**{**_valid(), "positive_insights": -1})

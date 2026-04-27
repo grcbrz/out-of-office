@@ -22,6 +22,9 @@ def _sentiment_df(date_str="2024-01-02"):
         "bearish_percent": [0.4],
         "company_news_score": [1.2],
         "article_count": [0.8],
+        "positive_insights": [3],
+        "negative_insights": [1],
+        "neutral_insights": [0],
     })
 
 

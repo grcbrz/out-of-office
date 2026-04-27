@@ -169,17 +169,16 @@ def main() -> None:
     start_date = args.start_date or _default_start_date()
 
     polygon_key = os.environ.get("POLYGON_API_KEY", "")
-    alphavantage_key = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 
-    if not polygon_key or not alphavantage_key:
-        logger.critical("POLYGON_API_KEY and ALPHA_VANTAGE_API_KEY must be set in environment")
+    if not polygon_key:
+        logger.critical("POLYGON_API_KEY must be set in environment")
         sys.exit(1)
 
     logger.info("=== nightly run: %s (start_date=%s) ===", run_date, start_date)
 
     # 1. Ingestion
     from src.ingestion.pipeline import IngestionPipeline
-    IngestionPipeline(polygon_key, alphavantage_key).run(run_date, start_date)
+    IngestionPipeline(polygon_key).run(run_date, start_date)
     logger.info("ingestion complete")
 
     # 2. Preprocessing

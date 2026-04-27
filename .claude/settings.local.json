@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git init *)"
+      "Bash(git init *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.massive.com)",
+      "WebFetch(domain:pypi.org)"
     ]
   }
 }

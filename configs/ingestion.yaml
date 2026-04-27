@@ -2,10 +2,24 @@ polygon:
   calls_per_minute: 100   # Basic plan; set to 5 for free tier
   universe_size: 30
 
-alphavantage:
-  calls_per_minute: 5     # Free tier: 25 calls/day hard cap (~1/3 min safe); Premium: 75
-
 retry:
   attempts: 3
   wait_min_seconds: 2
   wait_max_seconds: 4
+
+fixed_universe:
+  - ILLR
+  - PAPL
+  - BMNR
+  - GPUS
+  - SMCI
+  - BMNU
+  - NVTS
+  - ELPW
+  - LNAI
+  - INTC
+  - TSLL
+  - TLRY
+  - OPEN
+  - NVDA
+  - BMNG

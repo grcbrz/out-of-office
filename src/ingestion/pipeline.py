@@ -8,7 +8,6 @@ import pandas_market_calendars as mcal
 import yaml
 
 from src.ingestion.alerts import AlertWriter
-from src.ingestion.clients.alphavantage import AlphaVantageClient
 from src.ingestion.clients.polygon import PolygonClient
 from src.ingestion.models.ohlcv import OHLCVRecord
 from src.ingestion.models.sentiment import SentimentRecord
@@ -27,7 +26,6 @@ def _load_config(config_path: Path = _CONFIG_PATH) -> dict:
             return yaml.safe_load(fh)
     return {
         "polygon": {"calls_per_minute": 5, "universe_size": 50},
-        "alphavantage": {"calls_per_minute": 5},
     }
 
 
@@ -41,20 +39,37 @@ class IngestionPipeline:
     def __init__(
         self,
         polygon_api_key: str,
-        alphavantage_api_key: str,
+        alphavantage_api_key: str = "",  # kept for backward compat with run_nightly.py; unused
         raw_dir: Path = _RAW_DIR,
         config_path: Path = _CONFIG_PATH,
     ) -> None:
         cfg = _load_config(config_path)
         polygon_limiter = RateLimiter(cfg["polygon"]["calls_per_minute"])
-        av_limiter = RateLimiter(cfg["alphavantage"]["calls_per_minute"])
         self._universe_size: int = cfg["polygon"].get("universe_size", 50)
         self._fixed_universe: list[str] = cfg.get("fixed_universe") or []
         self._polygon = PolygonClient(polygon_api_key, polygon_limiter)
-        self._alphavantage = AlphaVantageClient(alphavantage_api_key, av_limiter)
         self._raw_dir = raw_dir
         self._alert_writer = AlertWriter(raw_dir / "alerts")
         self._calendar = mcal.get_calendar("NYSE")
+        self._finbert = self._load_finbert()
+
+    @staticmethod
+    def _load_finbert() -> object:
+        try:
+            from transformers import pipeline as hf_pipeline
+            logger.info("loading FinBERT model (ProsusAI/finbert)…")
+            model = hf_pipeline(
+                "text-classification",
+                model="ProsusAI/finbert",
+                device=-1,
+                truncation=True,
+                max_length=512,
+            )
+            logger.info("FinBERT loaded")
+            return model
+        except Exception as exc:
+            logger.warning("FinBERT unavailable (%s) — sentiment scores will use Polygon labels only", exc)
+            return None
 
     def run(self, run_date: date, start_date: date) -> None:
         """Execute a full ingestion run for run_date.
@@ -174,7 +189,7 @@ class IngestionPipeline:
             logger.debug("sentiment already exists for %s %s, skipping", ticker, run_date)
             return "ok"
         try:
-            record = self._alphavantage.fetch_sentiment(ticker, run_date)
+            record = self._polygon.fetch_news_sentiment(ticker, run_date, self._finbert)
             row = self._sentiment_to_dict(record)
             write_csv(dest, [row])
             all_null = all(
@@ -207,11 +222,16 @@ class IngestionPipeline:
 
     @staticmethod
     def _sentiment_to_dict(r: SentimentRecord) -> dict:
+        def _s(v: object) -> object:
+            return v if v is not None else ""
         return {
             "ticker": r.ticker,
             "date": str(r.date),
-            "bullish_percent": r.bullish_percent if r.bullish_percent is not None else "",
-            "bearish_percent": r.bearish_percent if r.bearish_percent is not None else "",
-            "company_news_score": r.company_news_score if r.company_news_score is not None else "",
-            "article_count": r.article_count if r.article_count is not None else "",
+            "bullish_percent": _s(r.bullish_percent),
+            "bearish_percent": _s(r.bearish_percent),
+            "company_news_score": _s(r.company_news_score),
+            "article_count": _s(r.article_count),
+            "positive_insights": _s(r.positive_insights),
+            "negative_insights": _s(r.negative_insights),
+            "neutral_insights": _s(r.neutral_insights),
         }

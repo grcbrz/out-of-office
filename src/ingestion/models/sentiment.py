@@ -12,6 +12,9 @@ class SentimentRecord(BaseModel):
     bearish_percent: float | None = None
     company_news_score: float | None = None
     article_count: float | None = None
+    positive_insights: int | None = None
+    negative_insights: int | None = None
+    neutral_insights: int | None = None
 
     @field_validator("ticker")
     @classmethod
@@ -32,4 +35,11 @@ class SentimentRecord(BaseModel):
     def buzz_non_negative(cls, v: float | None) -> float | None:
         if v is not None and v < 0:
             raise ValueError(f"buzz must be >= 0, got {v}")
+        return v
+
+    @field_validator("positive_insights", "negative_insights", "neutral_insights")
+    @classmethod
+    def insights_non_negative(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError(f"insight count must be >= 0, got {v}")
         return v

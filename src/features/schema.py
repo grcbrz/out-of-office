@@ -16,6 +16,7 @@ FEATURE_COLUMNS: list[str] = [
     "close_zscore", "volume_zscore",
     "day_of_week", "week_of_year", "month", "is_month_end",
     "bullish_percent", "bearish_percent", "company_news_score", "article_count",
+    "positive_insights", "negative_insights", "neutral_insights",
     "sentiment_available",
     "close_outlier_flag", "volume_outlier_flag",
     "ticker_id",
@@ -29,6 +30,7 @@ _NON_CONTINUOUS_FEATURES = {
     # Sentiment columns: null for all historical data and sparse in recent data.
     # KS/PSI on mostly-null columns produces unstable, meaningless drift signals.
     "bullish_percent", "bearish_percent", "company_news_score", "article_count",
+    "positive_insights", "negative_insights", "neutral_insights",
     "sentiment_available", "close_outlier_flag", "volume_outlier_flag",
     "ticker_id",
 }
@@ -76,6 +78,9 @@ class FeatureRecord(BaseModel):
     bearish_percent: float | None = None
     company_news_score: float | None = None
     article_count: float | None = None
+    positive_insights: int | None = None
+    negative_insights: int | None = None
+    neutral_insights: int | None = None
     sentiment_available: bool = False
     # Outlier flags passthrough
     close_outlier_flag: bool = False

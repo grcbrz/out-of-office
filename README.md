@@ -1,6 +1,6 @@
 # OOO - learning models, buying time
 
-Private-use nightly stock recommender that produces **BUY / HOLD / SELL** signals for the top 30 US equities by volume. Signals are generated after market close and consumed before open.
+Private-use nightly stock recommender that produces **BUY / HOLD / SELL** signals for a configurable fixed universe of equities (default: 15 tickers). Signals are generated after market close and consumed before open.
 
 ---
 
@@ -8,7 +8,7 @@ Private-use nightly stock recommender that produces **BUY / HOLD / SELL** signal
 
 ```
 scripts/run_nightly.py
-├── Ingestion        — OHLCV via Massive (Polygon.io) + sentiment via Alpha Vantage
+├── Ingestion        — OHLCV via Massive (Polygon.io) + news sentiment via Polygon + FinBERT
 ├── Preprocessing    — cleaning, imputation, outlier detection
 ├── Feature Eng.     — log returns, MACD, OBV, VWAP, lags, seasonality
 ├── Monitoring       — feature drift (KS+PSI), prediction drift, hit-rate degradation
@@ -26,8 +26,8 @@ The FastAPI server runs as a persistent background service (launchd). The nightl
 - Python 3.11+
 - [pyenv](https://github.com/pyenv/pyenv) (recommended; `.python-version` pins 3.12.9)
 - A [Massive](https://massive.com) (formerly Polygon.io) Basic-plan API key
-- An [Alpha Vantage](https://www.alphavantage.co) API key (premium recommended; free tier allows only 25 calls/day)
 - A bearer token of at least 32 characters for the API (`API_TOKEN`)
+- `torch` + `transformers` (installed via `make install`; FinBERT downloads ~440 MB on first run)
 
 ---
 
@@ -49,7 +49,6 @@ make install
 cp .env.example .env
 # Edit .env and fill in:
 #   POLYGON_API_KEY=<your Massive key>
-#   ALPHA_VANTAGE_API_KEY=<your Alpha Vantage key>
 #   API_TOKEN=<random string, ≥32 chars>
 ```
 
@@ -145,7 +144,7 @@ curl -X POST http://127.0.0.1:8000/predict \
 }
 ```
 
-Omit `tickers` to get signals for the full 30-ticker universe. Omit `predict_date` to default to today.
+Omit `tickers` to get signals for the full configured universe. Omit `predict_date` to default to today.
 
 Per-prediction explanations use SHAP TreeExplainer for tree-based models (Autoformer/PatchTST) and KernelExplainer fallback for MLP (N-HiTS).
 
@@ -154,7 +153,7 @@ Per-prediction explanations use SHAP TreeExplainer for tree-based models (Autofo
 ## Development
 
 ```bash
-make test        # Run full test suite (247 tests)
+make test        # Run full test suite (250 tests)
 make coverage    # Tests + coverage report (≥85%; currently ~88%)
 make lint        # ruff + mypy (zero errors)
 make format      # black
@@ -167,7 +166,7 @@ make notebook    # Launch Jupyter for EDA
 
 ```
 src/
-├── ingestion/      — Massive + Alpha Vantage clients, rate limiter, pipeline
+├── ingestion/      — Massive OHLCV + Polygon news sentiment (FinBERT-scored), rate limiter, pipeline
 ├── preprocessing/  — Imputation, outlier detection, normalisation, merger
 ├── features/       — Returns, trend, volume, lags, seasonality, target label
 ├── models/         — Walk-forward harness, N-HiTS/PatchTST/Autoformer wrappers
@@ -180,9 +179,10 @@ tests/
 ├── integration/    — Pipeline-level tests
 └── acceptance/     — Spec-level behaviour tests
 
-configs/            — YAML configs for all pipeline stages
+configs/            — YAML configs for all pipeline stages (incl. fixed_universe list)
 scripts/            — CLI entry points and launchd plist
 specs/              — Spec-driven design documents (01–07)
+notebooks/          — EDA: universe_selection, sentiment_exploration, yfinance_exploration
 data/               — Raw, processed, features, predictions, monitoring outputs
 models/production/  — Single production artifact (latest winning model only)
 reports/            — Evaluation and monitoring reports
@@ -192,22 +192,27 @@ reports/            — Evaluation and monitoring reports
 
 ## Data sources
 
-| Source | Data | Plan |
+| Source | Data | Notes |
 |---|---|---|
-| [Massive](https://massive.com) (formerly Polygon.io) | OHLCV, universe resolution (top 30 by volume) | Basic (100 calls/min) |
-| [Alpha Vantage](https://www.alphavantage.co) | News sentiment — aggregated per-ticker score from article feed | Free tier: 25 calls/day (rate limiter: 5/min); Premium: 75/min |
+| [Massive](https://massive.com) (formerly Polygon.io) | OHLCV + news articles with per-ticker insights | Basic plan (100 calls/min); single API key for both data types |
 
-**Finnhub** was used for sentiment in early development but dropped — the `news-sentiment` endpoint requires a paid plan and is no longer part of this pipeline.
+The universe is **fixed** via `configs/ingestion.yaml` (`fixed_universe` list). When set, the Polygon volume-sort is bypassed entirely — Polygon is only used for OHLCV fetching and the news endpoint. Editing the list and re-running `make nightly` immediately switches to the new set of tickers.
 
 Raw data is immutable and never overwritten. All pipeline steps are idempotent.
 
-### Sentiment aggregation
+### Sentiment pipeline — Polygon news + FinBERT
 
-Alpha Vantage returns a news article feed. For each ticker, the pipeline:
-1. Filters articles where the ticker's `relevance_score ≥ 0.1`
-2. Computes `bullish_percent` / `bearish_percent` from per-article sentiment labels
-3. Computes `company_news_score` as the mean `ticker_sentiment_score` (range −1 to +1)
-4. Records `article_count` as the count of relevant articles in the 24h window
+The nightly ingestion calls `GET /v2/reference/news` for each ticker over a 24h window. Each article in the response includes an `insights[]` array with per-ticker sentiment labels and reasoning text.
+
+For each ticker the pipeline:
+1. Extracts all insights where `insight["ticker"] == ticker`
+2. Counts `positive_insights` / `negative_insights` / `neutral_insights` from Polygon's pre-computed labels
+3. Derives `bullish_percent` = positive / total, `bearish_percent` = negative / total
+4. Runs **ProsusAI/FinBERT** on each `sentiment_reasoning` string (e.g. `"Earnings beat expectations significantly"`) to get a confidence score
+5. Computes `company_news_score = Σ(sign × finbert_confidence) / n_insights`, clamped to [−1, 1]
+6. Records `article_count` as articles mentioning the ticker in the window
+
+FinBERT (`transformers`, `torch`) loads once at ingestion startup (~5–10 s from cache; ~440 MB download on first run). When reasoning text is absent, Polygon's own label is used at a fixed confidence of 0.5.
 
 ---
 
@@ -221,7 +226,7 @@ Three candidates are evaluated in walk-forward cross-validation (252-day train w
 | **PatchTST** | GradientBoostingClassifier | Patch-based; strong on local financial patterns |
 | **Autoformer** | ExtraTreesClassifier | Included when the above underperform |
 
-> The sklearn backends are a pragmatic substitute until `torch` + `neuralforecast` are installed. All shared logic lives in `BaseModelWrapper` (`src/models/architectures/base.py`); each wrapper implements only `_build_model()`. Swapping in the real architecture requires replacing that one method — nothing else changes.
+> The sklearn backends are a pragmatic substitute until `neuralforecast` is installed. `torch` is already present (added for FinBERT sentiment scoring). All shared logic lives in `BaseModelWrapper` (`src/models/architectures/base.py`); each wrapper implements only `_build_model()`. Swapping in the real architecture requires replacing that one method — nothing else changes.
 
 Ties in F1-macro are broken in the order N-HiTS → PatchTST → Autoformer.
 
@@ -252,7 +257,7 @@ Run nightly before the training decision. Results written to `reports/monitoring
 
 Excluded from KS/PSI checks:
 - **Calendrical** (`month`, `week_of_year`, `day_of_week`, `is_month_end`) — distributions shift with the calendar window, not regime change
-- **Sentiment numeric columns** (`bullish_percent`, `bearish_percent`, `company_news_score`, `article_count`) — null for 100% of historical training data; KS/PSI on mostly-null columns produces meaningless signals
+- **Sentiment numeric columns** (`bullish_percent`, `bearish_percent`, `company_news_score`, `article_count`, `positive_insights`, `negative_insights`, `neutral_insights`) — null for all historical training data; KS/PSI on mostly-null columns produces meaningless signals
 - **Boolean flags** (`close_outlier_flag`, `volume_outlier_flag`, `sentiment_available`) and **categorical** (`ticker_id`)
 
 Alert files written to `data/monitoring/alerts/{date}.json`. Retraining state persisted in `data/monitoring/status.json`. Evidently HTML + JSON reports generated every 7 runs to `reports/monitoring/`.
@@ -270,4 +275,4 @@ Alert files written to `data/monitoring/alerts/{date}.json`. Retraining state pe
 
 ## Disclaimer
 
-This project is for private, non-commercial use only. It is not financial advice. Verify the terms of service for Massive and Alpha Vantage on any plan changes.
+This project is for private, non-commercial use only. It is not financial advice. Verify the terms of service for Massive (Polygon.io) on any plan changes.

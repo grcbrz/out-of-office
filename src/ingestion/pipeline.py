@@ -39,7 +39,6 @@ class IngestionPipeline:
     def __init__(
         self,
         polygon_api_key: str,
-        alphavantage_api_key: str = "",  # kept for backward compat with run_nightly.py; unused
         raw_dir: Path = _RAW_DIR,
         config_path: Path = _CONFIG_PATH,
     ) -> None:
@@ -119,7 +118,6 @@ class IngestionPipeline:
             "sentiment_null": sentiment_null,
             "sentiment_failed": sentiment_failed,
             "polygon_api_version": "v2",
-            "alphavantage_api_version": "v1",
             "started_at": started_at.isoformat(),
             "completed_at": completed_at.isoformat(),
         }

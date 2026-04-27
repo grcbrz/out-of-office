@@ -9,8 +9,8 @@
 **Stock universe:** Top 50 US stocks by volume (dynamically resolved nightly)
 **Run mode:** Nightly batch job — signals generated after market close, consumed before open
 **Data sources:**
-- **Polygon.io** (free tier) — OHLCV + ticker universe; 5 calls/min rate limit, 2 years historical daily data
-- **Finnhub** (free tier) — pre-computed news sentiment scores per ticker; 60 calls/min rate limit
+- **Polygon.io / Massive** (Basic plan) — OHLCV + ticker universe + news articles with per-ticker insights; 100 calls/min rate limit, 2 years historical daily data
+- **FinBERT** (local inference) — sentiment scoring on Polygon news reasoning text
 
 ---
 
@@ -41,7 +41,7 @@ stocks-recommender/
 ├── models/
 │   └── production/         # Latest winning model artifact only
 ├── src/
-│   ├── ingestion/          # Data acquisition — Polygon.io (OHLCV) + Finnhub (sentiment)
+│   ├── ingestion/          # Data acquisition — Polygon.io (OHLCV, news) + FinBERT sentiment scoring
 │   ├── preprocessing/      # Cleaning, validation, normalisation
 │   ├── features/           # Feature engineering pipelines
 │   ├── models/             # Model definitions (Autoformer, baselines)
@@ -124,8 +124,7 @@ stocks-recommender/
 - All pipeline steps must be idempotent
 - **Ingestion is a nightly batch job.** Schedule after market close (US Eastern). Do not design for real-time.
 - **Rate limiting is mandatory at the ingestion layer:**
-  - Polygon.io: max 5 calls/min — use a token bucket or `tenacity` with explicit sleep
-  - Finnhub: max 60 calls/min — same pattern, lower pressure
+  - Polygon.io / Massive: max 100 calls/min (Basic plan) — rate limiter enforced at ingestion layer via `RateLimiter` utility
   - Design rate limiter as a reusable utility; never hard-code `time.sleep()` inline
 - **Universe resolution:** Top 50 by volume is resolved fresh each night via Polygon's grouped daily endpoint before fetching per-ticker data
 
@@ -288,7 +287,7 @@ make notebook        # launch Jupyter for EDA
 ## Constraints & Scope (Private Use)
 
 - No real-money execution — signal generation only
-- Polygon.io and Finnhub free tier ToS permit private, non-commercial use — verify on any tier upgrade
+- Polygon.io / Massive Basic plan ToS permit private, non-commercial use — verify on any tier upgrade
 - Do not cache or redistribute raw API data beyond personal use
 - This project is **not** financial advice and must not be represented as such
 
@@ -301,7 +300,8 @@ make notebook        # launch Jupyter for EDA
 - [N-HiTS paper](https://arxiv.org/abs/2201.12886) — Challu et al., 2022
 - [NeuralForecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html)
 - [Polygon.io REST API docs](https://polygon.io/docs/stocks)
-- [Finnhub API docs](https://finnhub.io/docs/api)
+- [Hugging Face Transformers](https://huggingface.co/docs/transformers)
+- [FinBERT](https://github.com/ProsusAI/finbert)
 - [pandas-market-calendars](https://pandas-market-calendars.readthedocs.io/)
 - [tenacity](https://tenacity.readthedocs.io/)
 - [SHAP](https://shap.readthedocs.io/)

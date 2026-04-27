@@ -19,6 +19,8 @@ def _make_pipeline(tmp_path: Path) -> IngestionPipeline:
     # Replace real HTTP clients with mocks
     pipeline._polygon = MagicMock()
     pipeline._alphavantage = MagicMock()
+    # Tests that don't set this explicitly use the dynamic Polygon path
+    pipeline._fixed_universe = []
     return pipeline
 
 
@@ -82,6 +84,27 @@ def test_sentiment_failure_leaves_no_file_so_next_run_retries(tmp_path):
     # permanently-null sentinel and skipping forever.
     sentiment_path = tmp_path / "data" / "raw" / "sentiment" / "AAPL" / "2024-01-02.csv"
     assert not sentiment_path.exists()
+
+
+def test_fixed_universe_bypasses_polygon_resolution(tmp_path):
+    from src.ingestion.models.ohlcv import OHLCVRecord
+    from src.ingestion.models.sentiment import SentimentRecord
+
+    pipeline = _make_pipeline(tmp_path)
+    pipeline._fixed_universe = ["AAPL", "NVDA"]
+
+    ohlcv_record = OHLCVRecord(
+        ticker="AAPL", date=date(2024, 1, 2),
+        open=100.0, high=110.0, low=90.0, close=105.0, volume=1_000_000,
+    )
+    pipeline._polygon.fetch_ohlcv.return_value = [ohlcv_record]
+    pipeline._alphavantage.fetch_sentiment.return_value = SentimentRecord(
+        ticker="AAPL", date=date(2024, 1, 2),
+    )
+
+    pipeline.run(date(2024, 1, 2), date(2024, 1, 2))
+
+    pipeline._polygon.resolve_universe.assert_not_called()
 
 
 def test_idempotency_skips_existing_files(tmp_path):

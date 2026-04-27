@@ -49,6 +49,7 @@ class IngestionPipeline:
         polygon_limiter = RateLimiter(cfg["polygon"]["calls_per_minute"])
         av_limiter = RateLimiter(cfg["alphavantage"]["calls_per_minute"])
         self._universe_size: int = cfg["polygon"].get("universe_size", 50)
+        self._fixed_universe: list[str] = cfg.get("fixed_universe") or []
         self._polygon = PolygonClient(polygon_api_key, polygon_limiter)
         self._alphavantage = AlphaVantageClient(alphavantage_api_key, av_limiter)
         self._raw_dir = raw_dir
@@ -124,6 +125,9 @@ class IngestionPipeline:
     # ------------------------------------------------------------------
 
     def _resolve_universe(self, run_date: date) -> list[str]:
+        if self._fixed_universe:
+            logger.info("using fixed universe (%d tickers from config)", len(self._fixed_universe))
+            return list(self._fixed_universe)
         try:
             universe = self._polygon.resolve_universe(run_date, self._universe_size)
             if not universe:

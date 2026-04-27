@@ -23,8 +23,8 @@ data/predictions/
 data/monitoring/
 *.db
 
-# Models and experiment tracking
-models/
+# Models and experiment tracking (root artifact dir only; src/models/ and configs/models/ are source)
+/models/
 mlruns/
 
 # Reports (generated; not source)

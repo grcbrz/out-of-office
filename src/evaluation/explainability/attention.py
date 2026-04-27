@@ -7,7 +7,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_TRANSFORMER_MODELS = {"patchtst", "autoformer"}
+_TRANSFORMER_MODELS = {"autoformer"}
 
 
 class AttentionExtractor:

@@ -71,6 +71,12 @@ def metrics(_: str = Depends(require_auth)):
     return snap
 
 
+@app.post("/reload")
+def reload(_: str = Depends(require_auth)):
+    _loader.load()
+    return {"status": "reloaded", "model": _loader.model_name, "is_loaded": _loader.is_loaded}
+
+
 @app.post("/predict", response_model=PredictResponse)
 def predict(request: PredictRequest, _: str = Depends(require_auth)):
     if not _loader.is_loaded:

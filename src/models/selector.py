@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 # Tie-breaking preference: prefer simpler architecture
-_PREFERENCE_ORDER = ["nhits", "patchtst", "autoformer"]
+_PREFERENCE_ORDER = ["nhits", "autoformer"]
 
 
 @dataclass
@@ -18,7 +18,7 @@ class ModelResult:
 def select_winner(results: list[ModelResult]) -> ModelResult:
     """Return the ModelResult with the highest F1-macro.
 
-    Ties broken by preference: N-HiTS > PatchTST > Autoformer.
+    Ties broken by preference: N-HiTS > Autoformer.
     """
     if not results:
         raise ValueError("no model results to select from")

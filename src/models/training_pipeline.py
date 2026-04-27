@@ -39,7 +39,7 @@ def _set_global_seeds(seed: int) -> None:
 
 
 class TrainingPipeline:
-    """Orchestrates walk-forward training across N-HiTS, PatchTST, and Autoformer."""
+    """Orchestrates walk-forward training across N-HiTS and Autoformer."""
 
     def __init__(
         self,
@@ -69,7 +69,7 @@ class TrainingPipeline:
 
         fold_metrics: list[dict] = []
         # Accumulate f1 scores per model across all folds for aggregate selection
-        model_f1_history: dict[str, list[float]] = {"nhits": [], "patchtst": [], "autoformer": []}
+        model_f1_history: dict[str, list[float]] = {"nhits": [], "autoformer": []}
         # Final-fold results for all models — used to pick the artifact of the aggregate winner
         final_fold_results: dict[str, ModelResult] = {}
         final_fold: Fold | None = None
@@ -105,8 +105,8 @@ class TrainingPipeline:
         # Select production model by mean F1 across all folds (not just the last fold)
         mean_f1 = {name: (sum(scores) / len(scores) if scores else 0.0)
                    for name, scores in model_f1_history.items()}
-        logger.info("mean F1 across folds — nhits: %.3f  patchtst: %.3f  autoformer: %.3f",
-                    mean_f1["nhits"], mean_f1["patchtst"], mean_f1["autoformer"])
+        logger.info("mean F1 across folds — nhits: %.3f  autoformer: %.3f",
+                    mean_f1["nhits"], mean_f1["autoformer"])
         aggregate_winner = select_winner([
             ModelResult(model_name=name, f1_macro=f1)
             for name, f1 in mean_f1.items()
@@ -171,7 +171,7 @@ class TrainingPipeline:
     ) -> list[ModelResult]:
         """Train three models sequentially, return results."""
         results: list[ModelResult] = []
-        for name in ["nhits", "patchtst", "autoformer"]:
+        for name in ["nhits", "autoformer"]:
             try:
                 result = _train_one_model(name, train_df, val_df, class_weights, fold_index, artifact_dir)
                 logger.info("fold %d %s f1=%.3f", fold_index, name, result.f1_macro)
@@ -232,9 +232,6 @@ def _instantiate_wrapper(model_name: str, config: dict):
     if model_name == "nhits":
         from src.models.architectures.nhits import NHiTSWrapper
         return NHiTSWrapper(config)
-    if model_name == "patchtst":
-        from src.models.architectures.patchtst import PatchTSTWrapper
-        return PatchTSTWrapper(config)
     if model_name == "autoformer":
         from src.models.architectures.autoformer import AutoformerWrapper
         return AutoformerWrapper(config)

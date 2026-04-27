@@ -13,7 +13,7 @@ class SHAPExplainer:
     """Computes SHAP values for model predictions.
 
     Attempts DeepExplainer first; falls back to KernelExplainer on failure.
-    N-HiTS, PatchTST, and Autoformer are all supported (or their mocks in tests).
+    N-HiTS and Autoformer are both supported (or their mocks in tests).
     """
 
     def __init__(self, model: Any, background: pd.DataFrame) -> None:

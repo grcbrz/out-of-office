@@ -139,8 +139,7 @@ stocks-recommender/
 - Candidate models to evaluate (in complexity order):
   1. Baseline (naive, moving average, linear regression) — mandatory reference point
   2. N-HiTS — efficient, strong on multi-horizon, handles seasonality decomposition natively
-  3. PatchTST — patch-based transformer, strong on financial series with local patterns
-  4. Autoformer — designed for long horizons; for t+1 signals it is likely overkill; include only if N-HiTS and PatchTST underperform
+  3. Autoformer — designed for long horizons; include when N-HiTS underperforms
 
 - **Future experiments only (not current scope):** TimesNet
 
@@ -296,7 +295,6 @@ make notebook        # launch Jupyter for EDA
 ## References
 
 - [Autoformer paper](https://arxiv.org/abs/2106.13008) — Wu et al., 2021
-- [PatchTST paper](https://arxiv.org/abs/2211.14730) — Nie et al., 2022
 - [N-HiTS paper](https://arxiv.org/abs/2201.12886) — Challu et al., 2022
 - [NeuralForecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html)
 - [Polygon.io REST API docs](https://polygon.io/docs/stocks)

@@ -110,6 +110,17 @@ def _load_recent_predictions(window_end: date, window_days: int):
     return pd.concat(frames, ignore_index=True)
 
 
+def _reload_server(api_token: str) -> None:
+    if not api_token:
+        return
+    try:
+        with httpx.Client(base_url="http://127.0.0.1:8000", timeout=30) as client:
+            client.post("/reload", headers={"Authorization": f"Bearer {api_token}"})
+        logger.info("server model reloaded")
+    except Exception as exc:
+        logger.warning("server reload skipped: %s", exc)
+
+
 def _signal_counts(predictions_df) -> dict[str, int]:
     if predictions_df.empty:
         return {"BUY": 0, "HOLD": 0, "SELL": 0}
@@ -169,6 +180,7 @@ def main() -> None:
     start_date = args.start_date or _default_start_date()
 
     polygon_key = os.environ.get("POLYGON_API_KEY", "")
+    api_token = os.environ.get("API_TOKEN", "")
 
     if not polygon_key:
         logger.critical("POLYGON_API_KEY must be set in environment")
@@ -216,6 +228,7 @@ def main() -> None:
             # Reset drift flag after successful retraining + quality gate pass
             from src.monitoring.persistence import update_status
             update_status(_STATUS_PATH, retraining_required=False)
+            _reload_server(api_token)
         except Exception as exc:
             logger.error("evaluation/quality gate failed: %s — retraining flag kept", exc)
     else:
@@ -223,7 +236,6 @@ def main() -> None:
 
     # 6. Prediction
     from scripts.prediction_client import PredictionClient
-    api_token = os.environ.get("API_TOKEN", "")
     if api_token:
         try:
             PredictionClient().run(run_date)

@@ -24,7 +24,7 @@ def test_attention_null_for_nhits():
 
 def test_attention_extraction_transformer():
     model = _mock_transformer(n_heads=4, seq_len=10)
-    extractor = AttentionExtractor(model, "patchtst")
+    extractor = AttentionExtractor(model, "autoformer")
     result = extractor.extract(None)
     assert result is not None
     assert isinstance(result, list)

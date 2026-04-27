@@ -12,7 +12,7 @@ scripts/run_nightly.py
 ├── Preprocessing    — cleaning, imputation, outlier detection
 ├── Feature Eng.     — log returns, MACD, OBV, VWAP, lags, seasonality
 ├── Monitoring       — feature drift (KS+PSI), prediction drift, hit-rate degradation
-├── Training         — walk-forward harness; N-HiTS / PatchTST / Autoformer
+├── Training         — walk-forward harness; N-HiTS / Autoformer
 ├── Evaluation       — F1-macro, MCC, Sharpe, quality gate
 └── Prediction       — POST /predict via internal HTTP client
 ```
@@ -146,7 +146,7 @@ curl -X POST http://127.0.0.1:8000/predict \
 
 Omit `tickers` to get signals for the full configured universe. Omit `predict_date` to default to today.
 
-Per-prediction explanations use SHAP TreeExplainer for tree-based models (Autoformer/PatchTST) and KernelExplainer fallback for MLP (N-HiTS).
+Per-prediction explanations use SHAP TreeExplainer for tree-based models (Autoformer) and KernelExplainer fallback for MLP (N-HiTS).
 
 ---
 
@@ -169,7 +169,7 @@ src/
 ├── ingestion/      — Massive OHLCV + Polygon news sentiment (FinBERT-scored), rate limiter, pipeline
 ├── preprocessing/  — Imputation, outlier detection, normalisation, merger
 ├── features/       — Returns, trend, volume, lags, seasonality, target label
-├── models/         — Walk-forward harness, N-HiTS/PatchTST/Autoformer wrappers
+├── models/         — Walk-forward harness, N-HiTS/Autoformer wrappers
 ├── evaluation/     — Classification metrics, financial metrics, quality gate, SHAP
 ├── serving/        — FastAPI app, auth, artifact loader, inference engine
 └── monitoring/     — Feature drift, prediction drift, degradation, retraining trigger
@@ -218,17 +218,16 @@ FinBERT (`transformers`, `torch`) loads once at ingestion startup (~5–10 s fro
 
 ## Models
 
-Three candidates are evaluated in walk-forward cross-validation (252-day train window, 21-day step, minimum 3 folds). The model with the highest **mean F1-macro across all folds** wins and is written exclusively to `models/production/` using its final-fold artifact — previous winners are evicted automatically.
+Two candidates are evaluated in walk-forward cross-validation (252-day train window, 21-day step, minimum 3 folds). The model with the highest **mean F1-macro across all folds** wins and is written exclusively to `models/production/` using its final-fold artifact — previous winners are evicted automatically.
 
 | Model | Sklearn backend | Notes |
 |---|---|---|
 | **N-HiTS** | MLPClassifier | Multi-horizon; strong on seasonality decomposition |
-| **PatchTST** | GradientBoostingClassifier | Patch-based; strong on local financial patterns |
-| **Autoformer** | ExtraTreesClassifier | Included when the above underperform |
+| **Autoformer** | ExtraTreesClassifier | Strong on irregular patterns; class-balanced training |
 
 > The sklearn backends are a pragmatic substitute until `neuralforecast` is installed. `torch` is already present (added for FinBERT sentiment scoring). All shared logic lives in `BaseModelWrapper` (`src/models/architectures/base.py`); each wrapper implements only `_build_model()`. Swapping in the real architecture requires replacing that one method — nothing else changes.
 
-Ties in F1-macro are broken in the order N-HiTS → PatchTST → Autoformer.
+Ties in F1-macro are broken in the order N-HiTS → Autoformer.
 
 ### Quality gate
 

@@ -136,10 +136,15 @@ class PreprocessingPipeline:
         }
 
     def _validate_rows(self, df: pd.DataFrame, ticker: str) -> list[ProcessedRecord]:
+        import math
         valid: list[ProcessedRecord] = []
         for _, row in df.iterrows():
+            row_dict = {
+                k: (None if isinstance(v, float) and math.isnan(v) else v)
+                for k, v in row.to_dict().items()
+            }
             try:
-                valid.append(ProcessedRecord(**row.to_dict()))
+                valid.append(ProcessedRecord(**row_dict))
             except Exception as exc:
                 logger.error("processed row validation failed for %s: %s", ticker, exc)
         return valid

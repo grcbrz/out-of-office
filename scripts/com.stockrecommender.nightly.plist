@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stockrecommender.nightly</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/gracebraz/code/grcbrz/out-of-office/scripts/run_nightly.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/gracebraz/code/grcbrz/out-of-office</string>
+
+    <!-- 21:30 ET = 00:30 UTC (EST) / 01:30 UTC (EDT).
+         Polygon publishes daily OHLCV ~15-30 min after 4 PM ET close.
+         Running at 21:30 ET gives a safe buffer year-round. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>1</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/gracebraz/code/grcbrz/out-of-office/.venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.stockrecommender.nightly.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.stockrecommender.nightly.stderr.log</string>
+</dict>
+</plist>

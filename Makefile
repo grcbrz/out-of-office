@@ -33,16 +33,23 @@ run: ## Start FastAPI server (foreground)
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 	$(PYTHON) -m uvicorn src.serving.app:app --host 127.0.0.1 --port 8000 --log-level info
 
-serve-install: ## Install launchd plist for macOS background autostart
+serve-install: ## Install API server + nightly scheduler as launchd services
 	mkdir -p ~/Library/LaunchAgents
 	/bin/cp -f scripts/com.stockrecommender.api.plist ~/Library/LaunchAgents/
+	/bin/cp -f scripts/com.stockrecommender.nightly.plist ~/Library/LaunchAgents/
 	launchctl bootout gui/$$(id -u)/com.stockrecommender.api 2>/dev/null || true
+	launchctl bootout gui/$$(id -u)/com.stockrecommender.nightly 2>/dev/null || true
 	sleep 1
 	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.stockrecommender.api.plist
+	launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.stockrecommender.nightly.plist
+	@echo "API server: running (port 8000)"
+	@echo "Nightly pipeline: scheduled 01:30 UTC (21:30 ET). Logs: /tmp/com.stockrecommender.nightly.stdout.log"
 
-serve-uninstall: ## Unload and remove launchd plist
-	launchctl bootout gui/$$(id -u) ~/Library/LaunchAgents/com.stockrecommender.api.plist
+serve-uninstall: ## Unload and remove both launchd services
+	launchctl bootout gui/$$(id -u)/com.stockrecommender.api 2>/dev/null || true
+	launchctl bootout gui/$$(id -u)/com.stockrecommender.nightly 2>/dev/null || true
 	rm -f ~/Library/LaunchAgents/com.stockrecommender.api.plist
+	rm -f ~/Library/LaunchAgents/com.stockrecommender.nightly.plist
 
 train: ## Run training harness on existing data/features/
 	$(PYTHON) -c "import pandas as pd; from pathlib import Path; from src.models.training_pipeline import TrainingPipeline; \

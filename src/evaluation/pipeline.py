@@ -106,6 +106,7 @@ class EvaluationPipeline:
             mcc_min=gates.get("mcc_min", 0.05),
             hit_rate_min=gates.get("hit_rate_min", 0.50),
             max_signal_concentration=gates.get("max_signal_concentration", 0.80),
+            min_delta_over_baseline=gates.get("min_delta_over_baseline", 0.02),
         )
 
     @staticmethod

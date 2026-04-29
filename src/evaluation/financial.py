@@ -8,50 +8,65 @@ _SIGNAL_TO_DIRECTION = {"BUY": 1, "SELL": -1, "HOLD": 0}
 
 
 def compute_financial_metrics(
-    signals: pd.Series, forward_returns: pd.Series
+    signals: pd.Series,
+    forward_log_returns: pd.Series,
 ) -> dict:
-    """Compute Sharpe ratio, max drawdown, hit rate on BUY/SELL signals.
+    """Sharpe ratio, max drawdown, hit rate on BUY/SELL signals.
 
-    forward_returns must never be used as model input — this function is for
-    diagnostic evaluation only.
+    Inputs use **log** forward returns (matches ``compute_forward_return`` in
+    the feature layer). Sharpe and drawdown require **simple** returns to
+    compound correctly — log returns can be < -1, and ``(1 + log_r).cumprod()``
+    can go negative which is meaningless for portfolio-equity dynamics.
+
+    Strategy returns are constructed as ``direction * simple_return``:
+    a SELL signal flips the sign (modelled as a short position with no
+    financing cost). Hit rate uses the sign of the **log** return — sign is
+    invariant under the log → simple transformation so the choice is
+    cosmetic.
     """
-    directions = signals.map(_SIGNAL_TO_DIRECTION).fillna(0)
-    daily_returns = directions * forward_returns
+    directions = signals.map(_SIGNAL_TO_DIRECTION).fillna(0).astype(float)
 
-    hit_rate = _hit_rate(signals, forward_returns)
-    sharpe = _sharpe(daily_returns)
-    max_dd = _max_drawdown(daily_returns)
-    signal_dist = _signal_distribution(signals)
+    simple_returns = np.expm1(forward_log_returns.astype(float))
+    strategy_returns = directions * simple_returns
 
     return {
-        "hit_rate": hit_rate,
-        "sharpe_ratio": sharpe,
-        "max_drawdown": max_dd,
-        "signal_distribution": signal_dist,
+        "hit_rate": _hit_rate(signals, forward_log_returns),
+        "sharpe_ratio": _sharpe(strategy_returns),
+        "max_drawdown": _max_drawdown(strategy_returns),
+        "signal_distribution": _signal_distribution(signals),
     }
 
 
-def _hit_rate(signals: pd.Series, forward_returns: pd.Series) -> float:
-    """% of BUY/SELL signals where direction was correct. Excludes HOLD."""
+def _hit_rate(signals: pd.Series, forward_log_returns: pd.Series) -> float:
+    """% of BUY/SELL signals where the realised direction was correct.
+    Excludes HOLD. NaN if no BUY/SELL emitted.
+    """
     directional = signals[signals.isin(["BUY", "SELL"])]
     if directional.empty:
         return float("nan")
+    aligned = forward_log_returns[directional.index]
     correct = (
-        ((directional == "BUY") & (forward_returns[directional.index] > 0)) |
-        ((directional == "SELL") & (forward_returns[directional.index] < 0))
+        ((directional == "BUY") & (aligned > 0))
+        | ((directional == "SELL") & (aligned < 0))
     )
     return float(correct.mean())
 
 
-def _sharpe(daily_returns: pd.Series) -> float:
-    std = daily_returns.std()
+def _sharpe(strategy_returns: pd.Series) -> float:
+    std = strategy_returns.std()
     if std == 0 or pd.isna(std):
         return 0.0
-    return float(daily_returns.mean() / std * np.sqrt(_TRADING_DAYS_PER_YEAR))
+    return float(strategy_returns.mean() / std * np.sqrt(_TRADING_DAYS_PER_YEAR))
 
 
-def _max_drawdown(daily_returns: pd.Series) -> float:
-    cumulative = (1 + daily_returns).cumprod()
+def _max_drawdown(strategy_returns: pd.Series) -> float:
+    """Worst peak-to-trough drawdown of cumulative equity (simple-return compounding).
+
+    Returns 0.0 if no data, otherwise a value in (-1, 0].
+    """
+    if strategy_returns.empty:
+        return 0.0
+    cumulative = (1.0 + strategy_returns).cumprod()
     rolling_max = cumulative.cummax()
     drawdown = (cumulative - rolling_max) / rolling_max
     return float(drawdown.min())

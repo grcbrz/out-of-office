@@ -42,7 +42,7 @@ def test_write_csv_reports_appends(tmp_path):
 def test_log_to_mlflow_handles_import_error():
     with patch.dict("sys.modules", {"mlflow": None}):
         # Should not raise even if mlflow is missing
-        log_to_mlflow({"lr": 0.01}, {"f1": 0.4}, {"model": "nhits"})
+        log_to_mlflow({"lr": 0.01}, {"f1": 0.4}, {"model": "lightgbm"})
 
 
 def test_log_to_mlflow_handles_generic_exception():
@@ -50,4 +50,4 @@ def test_log_to_mlflow_handles_generic_exception():
     fake_mlflow = types.ModuleType("mlflow")
     fake_mlflow.log_param = lambda k, v: (_ for _ in ()).throw(RuntimeError("oops"))
     with patch.dict("sys.modules", {"mlflow": fake_mlflow}):
-        log_to_mlflow({"lr": 0.01}, {"f1": 0.4}, {"model": "nhits"})
+        log_to_mlflow({"lr": 0.01}, {"f1": 0.4}, {"model": "lightgbm"})

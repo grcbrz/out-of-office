@@ -62,14 +62,28 @@ def test_metrics_returns_json():
 
 
 def test_predict_with_loaded_artifact(tmp_path):
+    import numpy as np
+    import pandas as pd
+    from unittest.mock import MagicMock
     from src.serving.app import app, _loader
     os.environ["API_TOKEN"] = _TOKEN
+
+    mock_model = MagicMock()
+    mock_model.predict.return_value = [1]  # HOLD
+    mock_model.predict_proba.return_value = np.array([[0.2, 0.6, 0.2]])
+
     _loader.is_loaded = True
-    _loader.model_name = "nhits"
+    _loader.model_name = "lightgbm"
     _loader.ticker_map = {"AAPL": 0, "MSFT": 1}
     _loader.metadata = {"f1_macro": 0.40}
+    _loader.model = mock_model
+    _loader.imputation_params = {}
+    _loader.trained_features = ["close", "volume"]
 
-    with patch("src.serving.app.append_prediction_csv"):
+    fake_row = pd.Series({"close": 150.0, "volume": 1e6, "sentiment_available": False})
+
+    with patch("src.serving.app.append_prediction_csv"), \
+         patch("src.serving.app._load_feature_row", return_value=fake_row):
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post(
             "/predict",
@@ -86,7 +100,7 @@ def test_predict_unknown_ticker_400(tmp_path):
     from src.serving.app import app, _loader
     os.environ["API_TOKEN"] = _TOKEN
     _loader.is_loaded = True
-    _loader.model_name = "nhits"
+    _loader.model_name = "lightgbm"
     _loader.ticker_map = {"AAPL": 0}
     _loader.metadata = {}
 

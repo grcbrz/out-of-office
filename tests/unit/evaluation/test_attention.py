@@ -2,37 +2,35 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import numpy as np
+from src.evaluation.explainability.attention import (
+    AttentionExtractor,
+    _TRANSFORMER_MODELS,
+)
 
-from src.evaluation.explainability.attention import AttentionExtractor
+
+def test_attention_returns_null_for_lightgbm():
+    """v1 production candidate has no attention mechanism."""
+    extractor = AttentionExtractor(MagicMock(), "lightgbm")
+    assert extractor.extract(None) is None
 
 
-def _mock_transformer(n_heads=4, seq_len=10):
+def test_attention_returns_null_for_baseline():
+    extractor = AttentionExtractor(MagicMock(), "baseline_last_direction")
+    assert extractor.extract(None) is None
+
+
+def test_attention_does_not_invoke_model_for_unregistered_name():
+    """The extractor must not call get_attention_weights when the model name is
+    not registered as a transformer — protects against accidental crashes when
+    callers pass a non-transformer estimator that has no such method.
+    """
     model = MagicMock()
-    weights = np.random.rand(n_heads, seq_len, seq_len)
-    model.get_attention_weights.return_value = weights
-    return model
-
-
-def test_attention_null_for_nhits():
-    model = MagicMock()
-    extractor = AttentionExtractor(model, "nhits")
-    result = extractor.extract(None)
-    assert result is None
+    extractor = AttentionExtractor(model, "lightgbm")
+    extractor.extract(None)
     model.get_attention_weights.assert_not_called()
 
 
-def test_attention_extraction_transformer():
-    model = _mock_transformer(n_heads=4, seq_len=10)
-    extractor = AttentionExtractor(model, "autoformer")
-    result = extractor.extract(None)
-    assert result is not None
-    assert isinstance(result, list)
-    assert len(result) == 10  # seq_len
-
-
-def test_attention_averaging_across_heads():
-    model = _mock_transformer(n_heads=2, seq_len=5)
-    extractor = AttentionExtractor(model, "autoformer")
-    result = extractor.extract(None)
-    assert len(result) == 5
+def test_transformer_models_set_is_currently_empty():
+    """No transformer candidate is in production. When one is added,
+    update this expectation alongside the wiring."""
+    assert _TRANSFORMER_MODELS == frozenset()

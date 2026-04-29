@@ -12,7 +12,7 @@ def test_save_artifact_writes_files(tmp_path):
     prod_dir = tmp_path / "production"
 
     save_artifact(
-        model_name="nhits",
+        model_name="lightgbm",
         model_dir=model_dir,
         imputation_params={"close": 100.0},
         ticker_map={"AAPL": 0},
@@ -21,7 +21,7 @@ def test_save_artifact_writes_files(tmp_path):
         production_dir=prod_dir,
     )
 
-    dest = prod_dir / "nhits"
+    dest = prod_dir / "lightgbm"
     assert (dest / "imputation_params.json").exists()
     assert (dest / "ticker_map.json").exists()
     assert (dest / "metadata.json").exists()
@@ -35,7 +35,7 @@ def test_save_artifact_overwrites_existing(tmp_path):
 
     for f1 in (0.40, 0.45):
         save_artifact(
-            model_name="nhits",
+            model_name="lightgbm",
             model_dir=model_dir,
             imputation_params={},
             ticker_map={},
@@ -44,7 +44,7 @@ def test_save_artifact_overwrites_existing(tmp_path):
             production_dir=prod_dir,
         )
 
-    meta = json.loads((prod_dir / "nhits" / "metadata.json").read_text())
+    meta = json.loads((prod_dir / "lightgbm" / "metadata.json").read_text())
     assert meta["f1_macro"] == 0.45
 
 
@@ -54,7 +54,7 @@ def test_load_artifact_reads_files(tmp_path):
     prod_dir = tmp_path / "production"
 
     save_artifact(
-        model_name="nhits",
+        model_name="lightgbm",
         model_dir=model_dir,
         imputation_params={"close": 99.0},
         ticker_map={"AAPL": 0},
@@ -63,7 +63,7 @@ def test_load_artifact_reads_files(tmp_path):
         production_dir=prod_dir,
     )
 
-    result = load_artifact("nhits", prod_dir)
+    result = load_artifact("lightgbm", prod_dir)
     assert result["ticker_map"] == {"AAPL": 0}
     assert result["metadata"]["f1_macro"] == 0.41
 
@@ -75,7 +75,7 @@ def test_save_artifact_copies_weights_if_present(tmp_path):
     prod_dir = tmp_path / "production"
 
     save_artifact(
-        model_name="nhits",
+        model_name="lightgbm",
         model_dir=model_dir,
         imputation_params={},
         ticker_map={},
@@ -84,29 +84,34 @@ def test_save_artifact_copies_weights_if_present(tmp_path):
         production_dir=prod_dir,
     )
 
-    assert (prod_dir / "nhits" / "model.pt").exists()
+    assert (prod_dir / "lightgbm" / "model.pt").exists()
 
 
 def test_save_artifact_evicts_stale_model_dirs(tmp_path):
-    """When a new model wins, the old winner's directory must be removed."""
+    """When a new model wins, the old winner's directory must be removed.
+
+    Uses two distinct names so the eviction is observable. Real candidates
+    today are ``lightgbm`` only; the second name represents a hypothetical
+    additional candidate (e.g. a future neural-forecast model).
+    """
     model_dir = tmp_path / "src"
     model_dir.mkdir()
     prod_dir = tmp_path / "production"
 
     save_artifact(
-        model_name="nhits", model_dir=model_dir,
+        model_name="lightgbm", model_dir=model_dir,
         imputation_params={}, ticker_map={}, class_weights={}, metadata={},
         production_dir=prod_dir,
     )
-    assert (prod_dir / "nhits").exists()
+    assert (prod_dir / "lightgbm").exists()
 
     save_artifact(
-        model_name="autoformer", model_dir=model_dir,
+        model_name="future_transformer", model_dir=model_dir,
         imputation_params={}, ticker_map={}, class_weights={}, metadata={},
         production_dir=prod_dir,
     )
-    assert (prod_dir / "autoformer").exists()
-    assert not (prod_dir / "nhits").exists(), "stale nhits artifact must be evicted"
+    assert (prod_dir / "future_transformer").exists()
+    assert not (prod_dir / "lightgbm").exists(), "stale lightgbm artifact must be evicted"
 
 
 def test_save_artifact_copies_pickle_if_present(tmp_path):
@@ -117,7 +122,7 @@ def test_save_artifact_copies_pickle_if_present(tmp_path):
     prod_dir = tmp_path / "production"
 
     save_artifact(
-        model_name="nhits",
+        model_name="lightgbm",
         model_dir=model_dir,
         imputation_params={},
         ticker_map={},
@@ -126,4 +131,4 @@ def test_save_artifact_copies_pickle_if_present(tmp_path):
         production_dir=prod_dir,
     )
 
-    assert (prod_dir / "nhits" / "model.pkl").exists()
+    assert (prod_dir / "lightgbm" / "model.pkl").exists()

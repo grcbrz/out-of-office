@@ -51,3 +51,50 @@ def test_predict_fallback_uniform_distribution():
     signal, confidence = engine.predict("AAPL", _make_row())
     assert signal in ("BUY", "HOLD", "SELL")
     assert abs(confidence - 1 / 3) < 1e-6
+
+
+# ----- confidence threshold -----
+
+class _LowConfidenceModel:
+    """Top class is BUY but only at 0.45 — below typical τ values."""
+
+    def predict_proba(self, X):
+        return np.array([[0.30, 0.25, 0.45]])
+
+
+def test_predict_demotes_to_hold_when_below_threshold():
+    engine = InferenceEngine(
+        model=_LowConfidenceModel(),
+        imputation_params={},
+        ticker_map={"AAPL": 0},
+        confidence_threshold=0.50,
+    )
+    signal, confidence = engine.predict("AAPL", _make_row())
+    assert signal == "HOLD"
+    # Reported confidence is the *raw* top-class probability — keeps logging
+    # honest even after demotion.
+    assert abs(confidence - 0.45) < 1e-6
+
+
+def test_predict_keeps_buy_when_above_threshold():
+    engine = InferenceEngine(
+        model=_MockModel(),  # 0.7 BUY
+        imputation_params={},
+        ticker_map={"AAPL": 0},
+        confidence_threshold=0.50,
+    )
+    signal, confidence = engine.predict("AAPL", _make_row())
+    assert signal == "BUY"
+    assert abs(confidence - 0.7) < 1e-6
+
+
+def test_predict_no_threshold_falls_back_to_argmax():
+    """Legacy artifacts without τ should not gate anything."""
+    engine = InferenceEngine(
+        model=_LowConfidenceModel(),
+        imputation_params={},
+        ticker_map={"AAPL": 0},
+        confidence_threshold=None,
+    )
+    signal, _ = engine.predict("AAPL", _make_row())
+    assert signal == "BUY"

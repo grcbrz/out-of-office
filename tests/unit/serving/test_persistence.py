@@ -14,7 +14,7 @@ def _make_record(ticker="AAPL") -> PredictionRecord:
         ticker=ticker,
         signal="BUY",
         confidence=0.7,
-        model="nhits",
+        model="lightgbm",
         explainer_used="shap",
         predicted_at=dt.datetime(2026, 1, 2, 20, 0, tzinfo=dt.timezone.utc),
     )

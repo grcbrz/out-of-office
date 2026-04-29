@@ -29,7 +29,7 @@ def test_run_sends_predict_date_key(monkeypatch):
 
     def fake_post(url, json, headers):
         captured.append(json)
-        return _mock_response({"predictions": [], "run_date": "2026-04-24", "model": "autoformer", "warnings": []})
+        return _mock_response({"predictions": [], "run_date": "2026-04-24", "model": "lightgbm", "warnings": []})
 
     with patch("httpx.Client") as mock_client_cls:
         mock_client = MagicMock()
@@ -53,7 +53,7 @@ def test_run_includes_bearer_token(monkeypatch):
 
     def fake_post(url, json, headers):
         captured_headers.append(headers)
-        return _mock_response({"predictions": [], "run_date": "2026-04-24", "model": "autoformer", "warnings": []})
+        return _mock_response({"predictions": [], "run_date": "2026-04-24", "model": "lightgbm", "warnings": []})
 
     with patch("httpx.Client") as mock_client_cls:
         mock_client = MagicMock()
@@ -72,7 +72,7 @@ def test_run_returns_parsed_response(monkeypatch):
     expected = {
         "predictions": [{"ticker": "AAPL", "signal": "BUY", "confidence": 0.7}],
         "run_date": "2026-04-24",
-        "model": "autoformer",
+        "model": "lightgbm",
         "warnings": [],
     }
 

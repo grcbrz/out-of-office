@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from src.features.volume import compute_obv, compute_vwap_ratio
+from src.features.volume import (
+    compute_obv,
+    compute_obv_pct_change,
+    compute_volume_log_ratio,
+    compute_vwap_ratio,
+)
 
 
 def _df(closes, volumes, vwaps=None):
@@ -24,11 +30,24 @@ def test_obv_sign_logic():
     assert result["obv"].iloc[2] == 500
 
 
-def test_obv_lag1():
-    df = _df([100.0, 110.0], [1000, 2000])
-    result = compute_obv(df)
-    assert pd.isna(result["obv_lag1"].iloc[0])
-    assert result["obv_lag1"].iloc[1] == result["obv"].iloc[0]
+def test_obv_pct_change_against_reference():
+    closes = [100 + i for i in range(25)]
+    volumes = [1000] * 25
+    df = compute_obv_pct_change(compute_obv(_df(closes, volumes)))
+    # Manual: obv is monotonic increasing (all up days), so the 20-day pct change
+    # at index 20 = obv[20] / obv[0] - 1, but obv[0] == 0 → NaN expected.
+    assert pd.isna(df["obv_pct_change_20"].iloc[20])
+    # Index 21 onwards should be finite.
+    assert np.isfinite(df["obv_pct_change_20"].iloc[21])
+
+
+def test_volume_log_ratio_against_reference():
+    volumes = [1000] * 19 + [2000]  # last day is double the rolling mean
+    closes = [100.0] * 20
+    df = compute_volume_log_ratio(_df(closes, volumes))
+    # mean over the 20-day window ending at idx 19 is (19*1000 + 2000) / 20 = 1050
+    expected = np.log(2000 / 1050)
+    assert df["volume_log_ratio_20"].iloc[19] == pytest.approx(expected)
 
 
 def test_vwap_ratio_null_when_vwap_null():

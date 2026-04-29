@@ -17,7 +17,7 @@ def _write_pickle(path: Path, obj) -> None:
         pickle.dump(obj, f)
 
 
-def _make_valid_artifact(production_dir: Path, model_name: str = "nhits") -> Path:
+def _make_valid_artifact(production_dir: Path, model_name: str = "lightgbm") -> Path:
     model_dir = production_dir / model_name
     model_dir.mkdir(parents=True)
     _write_json(model_dir / "imputation_params.json", {"close": 100.0})
@@ -32,7 +32,7 @@ def test_loads_valid_artifact(tmp_path):
     loader = ArtifactLoader(production_dir=tmp_path)
     loader.load()
     assert loader.is_loaded
-    assert loader.model_name == "nhits"
+    assert loader.model_name == "lightgbm"
     assert loader.ticker_map == {"AAPL": 0, "MSFT": 1}
 
 
@@ -44,7 +44,7 @@ def test_degraded_mode_when_no_artifact(tmp_path):
 
 
 def test_degraded_mode_when_incomplete_artifact(tmp_path):
-    model_dir = tmp_path / "nhits"
+    model_dir = tmp_path / "lightgbm"
     model_dir.mkdir()
     # Only write one of the required files
     _write_json(model_dir / "metadata.json", {"f1_macro": 0.42})
@@ -58,3 +58,36 @@ def test_loads_metadata(tmp_path):
     loader = ArtifactLoader(production_dir=tmp_path)
     loader.load()
     assert loader.metadata["f1_macro"] == 0.42
+
+
+# ----- confidence threshold extraction -----
+
+def test_loads_confidence_threshold_from_top_level(tmp_path):
+    model_dir = _make_valid_artifact(tmp_path)
+    _write_json(
+        model_dir / "metadata.json",
+        {"f1_macro": 0.42, "confidence_threshold": 0.55},
+    )
+    loader = ArtifactLoader(production_dir=tmp_path)
+    loader.load()
+    assert loader.confidence_threshold == 0.55
+
+
+def test_loads_confidence_threshold_from_production_fold_fallback(tmp_path):
+    """Older artifacts nested τ inside production_fold; reader must still find it."""
+    model_dir = _make_valid_artifact(tmp_path)
+    _write_json(
+        model_dir / "metadata.json",
+        {"f1_macro": 0.42, "production_fold": {"confidence_threshold": 0.50}},
+    )
+    loader = ArtifactLoader(production_dir=tmp_path)
+    loader.load()
+    assert loader.confidence_threshold == 0.50
+
+
+def test_confidence_threshold_none_when_missing(tmp_path):
+    """Legacy artifacts without τ must load without complaint; gating is disabled."""
+    _make_valid_artifact(tmp_path)
+    loader = ArtifactLoader(production_dir=tmp_path)
+    loader.load()
+    assert loader.confidence_threshold is None

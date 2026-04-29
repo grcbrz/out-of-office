@@ -25,7 +25,7 @@ def _passing_metrics():
 
 def _passing_metadata():
     return {
-        "model_name": "nhits",
+        "model_name": "lightgbm",
         "fold_metrics": [
             {"fold": 0, "f1_macro": 0.40, "mcc": 0.08, "hit_rate": 0.52},
             {"fold": 1, "f1_macro": 0.42, "mcc": 0.10, "hit_rate": 0.55},
@@ -38,7 +38,7 @@ def _passing_metadata():
 def test_run_writes_reports_and_passes_gate(tmp_path):
     prod_dir = tmp_path / "production"
     report_dir = tmp_path / "reports"
-    _write_metadata(prod_dir, "nhits", _passing_metadata())
+    _write_metadata(prod_dir, "lightgbm", _passing_metadata())
 
     EvaluationPipeline(production_dir=prod_dir, report_dir=report_dir).run(date(2026, 4, 24))
 
@@ -55,7 +55,7 @@ def test_run_raises_when_gate_fails_but_still_writes_reports(tmp_path):
     report_dir = tmp_path / "reports"
     metadata = _passing_metadata()
     metadata["production_fold"]["f1_macro"] = 0.10  # below 0.35 threshold
-    _write_metadata(prod_dir, "nhits", metadata)
+    _write_metadata(prod_dir, "lightgbm", metadata)
 
     pipeline = EvaluationPipeline(production_dir=prod_dir, report_dir=report_dir)
     with pytest.raises(EvaluationQualityGateError):
@@ -74,7 +74,7 @@ def test_run_raises_when_no_production_directory(tmp_path):
 
 def test_run_raises_when_metadata_missing_production_fold(tmp_path):
     prod_dir = tmp_path / "production"
-    _write_metadata(prod_dir, "nhits", {"model_name": "nhits", "fold_metrics": []})
+    _write_metadata(prod_dir, "lightgbm", {"model_name": "lightgbm", "fold_metrics": []})
     pipeline = EvaluationPipeline(production_dir=prod_dir, report_dir=tmp_path / "r")
     with pytest.raises(EvaluationDataError, match="production_fold"):
         pipeline.run(date(2026, 4, 24))
@@ -84,7 +84,7 @@ def test_run_appends_to_existing_csv(tmp_path):
     """Spec 05 §6.2: CSVs append across runs, never overwrite."""
     prod_dir = tmp_path / "production"
     report_dir = tmp_path / "reports"
-    _write_metadata(prod_dir, "nhits", _passing_metadata())
+    _write_metadata(prod_dir, "lightgbm", _passing_metadata())
 
     pipeline = EvaluationPipeline(production_dir=prod_dir, report_dir=report_dir)
     pipeline.run(date(2026, 4, 24))

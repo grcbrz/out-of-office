@@ -94,6 +94,7 @@ def predict(request: PredictRequest, _: str = Depends(require_auth)):
         imputation_params=_loader.imputation_params,
         ticker_map=_loader.ticker_map,
         trained_features=_loader.trained_features,
+        confidence_threshold=_loader.confidence_threshold,
     )
     explainer = ServingExplainer(model=_loader.model, trained_features=_loader.trained_features)
 

@@ -62,11 +62,17 @@ def _sharpe(strategy_returns: pd.Series) -> float:
 def _max_drawdown(strategy_returns: pd.Series) -> float:
     """Worst peak-to-trough drawdown of cumulative equity (simple-return compounding).
 
-    Returns 0.0 if no data, otherwise a value in (-1, 0].
+    Returns 0.0 if no data, otherwise a value in [-1, 0].
+
+    Individual period returns are clipped to [-1, ∞) before compounding.
+    A SELL signal on a large positive day can otherwise produce a
+    strategy_return < -1 (short loses more than 100%), which sends
+    cumulative equity negative and makes the formula return nonsense
+    values like -112%.
     """
     if strategy_returns.empty:
         return 0.0
-    cumulative = (1.0 + strategy_returns).cumprod()
+    cumulative = (1.0 + strategy_returns.clip(lower=-1.0)).cumprod()
     rolling_max = cumulative.cummax()
     drawdown = (cumulative - rolling_max) / rolling_max
     return float(drawdown.min())

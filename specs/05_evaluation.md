@@ -18,8 +18,8 @@ Evaluate the production model and all fold models across three granularities (pe
 **In scope:**
 - Classification metrics: per fold, aggregated across folds, per ticker breakdown
 - Financial metrics: Sharpe ratio, max drawdown, hit rate on directional calls
-- SHAP values for all three model architectures
-- Attention weight extraction for PatchTST and Autoformer
+- SHAP values for the production candidate (LightGBM via `TreeExplainer`; `KernelExplainer` fallback for arbitrary estimators)
+- Attention weight extraction stub kept in place (no-op until a transformer candidate ships — see Spec 04 §6.2)
 - Per-prediction explanation logged alongside signal at inference time
 - Evaluation report persisted to MLflow (metrics + artifacts) and CSV
 - Metric thresholds as quality gates — training fails if production fold falls below threshold
@@ -44,8 +44,9 @@ Computed on the **validation fold** for each fold, then aggregated.
 | Precision per class | Per fold, aggregated, per ticker | |
 | Recall per class | Per fold, aggregated, per ticker | |
 | MCC (Matthews Correlation Coefficient) | Per fold, aggregated | Robust to class imbalance |
-| ROC-AUC (one-vs-rest) | Per fold, aggregated | Per class |
+| ROC-AUC (one-vs-rest, macro) | Per fold, aggregated | Computed from `predict_proba`, **never** from hard labels |
 | Confusion matrix | Per fold, aggregated | Logged as artifact |
+| Baseline F1-macro | Per fold | Naive last-direction baseline; sets the gate floor (§4) |
 
 **Aggregation method:** Mean and std across folds (not a single pooled computation). Std across folds quantifies model stability — a high mean with high std is a warning sign.
 
@@ -53,12 +54,14 @@ Computed on the **validation fold** for each fold, then aggregated.
 
 Computed on validation fold predictions using `forward_return` (stored in feature file, never used as model input).
 
+> **Threshold-aware.** Sharpe, max drawdown, hit rate, and signal distribution are computed on **threshold-applied** predictions (Spec 04 §7.4) — i.e. with the per-fold τ used to demote low-confidence BUY/SELL to HOLD. Classification metrics in §3.1 stay on the raw predictions. Without this split, model selection on F1 would prefer strategies that simply stop trading.
+
 | Metric | Definition | Notes |
 |---|---|---|
 | Hit rate | % of BUY/SELL signals where direction was correct | Excludes HOLD |
-| Simulated daily return | `forward_return` × signal direction (+1 BUY, −1 SELL, 0 HOLD) | No transaction costs in v1 |
-| Sharpe ratio | `mean(daily_return) / std(daily_return) × sqrt(252)` | Annualised |
-| Max drawdown | Maximum peak-to-trough cumulative return loss | Per fold |
+| Simulated daily return | `simple_return × signal direction` (+1 BUY, −1 SELL, 0 HOLD) | `simple_return = expm1(log_forward_return)` — log returns are converted before compounding (log returns can be < −1, breaking `(1 + r).cumprod`) |
+| Sharpe ratio | `mean(strategy_return) / std(strategy_return) × sqrt(252)` | Annualised, on simple-return strategy series |
+| Max drawdown | Min of `(cum / cummax − 1)` where `cum = (1 + strategy_return).cumprod()` | Per fold; bounded in `(−1, 0]` |
 | Signal distribution | % BUY / % HOLD / % SELL per fold | Detect degenerate models |
 
 > **Note:** Financial metrics are diagnostic, not selection criteria in v1. F1-macro drives model selection (Spec 04). Financial metrics are logged for human review.
@@ -79,14 +82,26 @@ Logged as a CSV artifact per fold. Enables identifying tickers where the global 
 
 Minimum thresholds on the **production fold** (final fold). Training pipeline raises `EvaluationQualityGateError` and does not persist the production artifact if any gate fails.
 
+Two classes of gate, evaluated together:
+
+### 4.1 Absolute floors (regression guards)
+
 | Metric | Minimum threshold | Rationale |
 |---|---|---|
-| F1-macro | ≥ 0.35 | Above random (0.33 for 3 classes) |
-| MCC | ≥ 0.05 | Non-trivial correlation |
-| Hit rate (BUY + SELL) | ≥ 0.50 | Better than coin flip on directional calls |
-| Signal distribution | No class > 80% of predictions | Detect degenerate always-HOLD models |
+| F1-macro | ≥ 0.40 | Sanity floor; well above 3-class random (0.33) |
+| MCC | ≥ 0.10 | Non-trivial correlation |
+| Hit rate (BUY + SELL) | ≥ 0.52 | Better than coin flip with margin |
+| Signal distribution | No class > 70% of predictions | Detect degenerate always-HOLD models |
 
-Thresholds are configurable in `configs/evaluation.yaml`. These are conservative v1 baselines — tighten as the model matures.
+### 4.2 Baseline delta (the real bar)
+
+The production model **must beat the naive last-direction baseline (Spec 04 §6) by at least `min_delta_over_baseline` F1-macro points** on the production fold. This is the gate that answers *did the model add anything over the trivial benchmark?* If `baseline_f1_macro` is missing the delta gate is skipped with a warning (legacy artifacts only).
+
+| Setting | Default | Rationale |
+|---|---|---|
+| `min_delta_over_baseline` | 0.02 | 2 percentage points — enough to be noticeable, not so high that early models can never ship. Tighten as model matures. |
+
+Thresholds are configurable in `configs/evaluation.yaml`.
 
 ---
 
@@ -95,29 +110,22 @@ Thresholds are configurable in `configs/evaluation.yaml`. These are conservative
 ### 5.1 SHAP Values
 
 **Library:** `shap`
-**Method:** `shap.DeepExplainer` for PyTorch models
+**Method (v1):** `shap.TreeExplainer` for LightGBM (exact, no sampling).
+**Fallback:** `shap.KernelExplainer` on a 100-sample background subset for any non-tree estimator (e.g. the baseline; future neural models). Log which explainer was used on each run.
 **Computed on:** Validation fold (training-time) and per prediction (inference-time)
 
 **Output per fold:**
 - Mean absolute SHAP value per feature → feature importance ranking
-- SHAP values matrix: `(n_val_samples, n_features)` — stored as CSV artifact
+- SHAP values array (TreeExplainer/KernelExplainer multi-class: shape `(n_classes, n_val_samples, n_features)`) — stored as a CSV artifact, flattened per class
 
 **Output per prediction (inference-time):**
 - SHAP values for that single prediction
-- Top 5 features by absolute SHAP value
+- Top 5 features by absolute SHAP value (defaults to the predicted class)
 - Logged alongside the BUY/HOLD/SELL signal in the prediction output
 
-**Edge case:** If `DeepExplainer` is incompatible with a given architecture version, fall back to `shap.KernelExplainer` on a 100-sample background subset. Log which explainer was used.
+### 5.2 Attention Weights (deferred)
 
-### 5.2 Attention Weights (PatchTST, Autoformer only)
-
-**Extracted from:** Final attention layer of the encoder
-**Shape:** `(n_heads, seq_len, seq_len)` — averaged across heads for interpretability
-**Stored as:** NumPy array artifact per fold (`.npy` file)
-
-At inference time, per-prediction attention weights extracted and stored as a flat vector (mean across heads, last query position) alongside the signal.
-
-N-HiTS has no attention mechanism — skip silently, log `attention_weights: null` in prediction output.
+`AttentionExtractor` is preserved but inert in v1: there is no transformer candidate in production (see Spec 04 §6.2). It returns `None` for every model, and inference logs `attention_weights: null` accordingly. When a real transformer candidate ships, register its `model_name` in `_TRANSFORMER_MODELS` to re-enable extraction.
 
 ### 5.3 Feature Importance Report
 
@@ -216,10 +224,14 @@ src/evaluation/
 ```yaml
 # configs/evaluation.yaml
 quality_gates:
-  f1_macro_min: 0.35
-  mcc_min: 0.05
-  hit_rate_min: 0.50
-  max_signal_concentration: 0.80   # no single class > 80% of predictions
+  # Absolute floors — guard against catastrophic regression.
+  f1_macro_min: 0.40
+  mcc_min: 0.10
+  hit_rate_min: 0.52
+  max_signal_concentration: 0.70   # no single class > 70% of predictions
+
+  # Baseline delta — the real bar.
+  min_delta_over_baseline: 0.02
 
 shap:
   background_sample_size: 100      # for KernelExplainer fallback
@@ -235,14 +247,18 @@ reports:
 ## 10. Acceptance Criteria
 
 - [ ] F1-macro, F1 per class, Precision, Recall, MCC, ROC-AUC computed per fold and aggregated (mean + std)
+- [ ] ROC-AUC computed from `predict_proba`; falls back to `None` when probabilities are unavailable (never computed on hard labels)
 - [ ] Confusion matrix computed and stored per fold
 - [ ] Per-ticker breakdown (F1-macro, F1 per class, hit rate, signal distribution) logged per fold
-- [ ] Sharpe ratio, max drawdown, hit rate computed on validation fold using `forward_return`
+- [ ] Sharpe and max drawdown computed on **simple** strategy returns (`expm1(log_forward_return) * direction`)
+- [ ] Hit rate computed on directional signals only (HOLD excluded) using sign of forward log return
 - [ ] `forward_return` never passed as model input — enforced before metric computation
-- [ ] Quality gates evaluated on production fold; `EvaluationQualityGateError` raised on failure
+- [ ] Naive last-direction baseline trained on every fold; baseline F1-macro logged alongside model F1
+- [ ] `baseline_f1_macro` and `baseline_aggregated_f1_macro` persisted in production metadata
+- [ ] Quality gates evaluated on production fold; `EvaluationQualityGateError` raised on absolute-floor or baseline-delta failure
 - [ ] Production artifact not written if quality gate fails
-- [ ] SHAP values computed for all three architectures; fallback to `KernelExplainer` logged
-- [ ] Attention weights extracted for PatchTST and Autoformer; null for N-HiTS
+- [ ] SHAP values computed for the production candidate; tree boosters use `TreeExplainer`, others fall back to `KernelExplainer`; explainer type logged
+- [ ] `attention_weights` is `null` in every prediction record while no transformer candidate is in `_TRANSFORMER_MODELS`
 - [ ] Feature importance CSV produced (aggregated mean abs SHAP across folds)
 - [ ] All metrics logged to MLflow under correct parent/child run
 - [ ] CSV reports written to `reports/evaluation/{date}/`; append mode, not overwrite
@@ -264,13 +280,19 @@ reports:
 | `test_hit_rate_excludes_hold` | Unit | HOLD signals not counted in hit rate |
 | `test_aggregation_mean_std` | Unit | 3 mock folds; assert mean and std correct |
 | `test_per_ticker_breakdown` | Unit | 3 tickers in val fold; assert per-ticker metrics |
-| `test_quality_gate_passes` | Unit | Metrics above threshold; no error |
-| `test_quality_gate_fails_f1` | Unit | F1 below 0.35; `EvaluationQualityGateError` raised |
+| `test_quality_gate_passes` | Unit | Metrics above threshold and over baseline; no error |
+| `test_quality_gate_fails_f1` | Unit | F1 below absolute floor; `EvaluationQualityGateError` raised |
+| `test_quality_gate_fails_baseline_delta` | Unit | F1 above absolute floor but ≤ baseline + δ; error raised |
+| `test_quality_gate_skips_baseline_when_missing` | Unit | `baseline_f1_macro` absent; warning logged, no error |
 | `test_quality_gate_fails_concentration` | Unit | 85% HOLD signals; error raised |
+| `test_roc_auc_uses_proba` | Unit | Probabilities passed → finite AUC; `None` → roc_auc field is `None` |
+| `test_financial_metrics_simple_returns` | Unit | Hand-computed Sharpe and MDD on a small log-return series via `expm1` |
 | `test_shap_deep_explainer` | Unit | Mock model; assert SHAP output shape |
 | `test_shap_kernel_fallback` | Unit | Force fallback; assert `KernelExplainer` used and logged |
-| `test_attention_extraction_transformer` | Unit | Mock PatchTST; assert weight shape and averaging |
-| `test_attention_null_for_nhits` | Unit | N-HiTS model; attention returns null |
+| `test_attention_returns_null_for_lightgbm` | Unit | Production candidate has no attention → null |
+| `test_attention_returns_null_for_baseline` | Unit | Baseline has no attention → null |
+| `test_shap_uses_tree_explainer_for_lightgbm` | Unit | TreeExplainer selected; KernelExplainer not invoked |
+| `test_shap_falls_back_to_kernel_for_unknown_model` | Unit | Non-tree estimator → KernelExplainer used and logged |
 | `test_feature_importance_ranking` | Unit | Known SHAP matrix; assert correct rank order |
 | `test_inference_explanation_structure` | Unit | Assert top-5 features, confidence, explainer logged |
 | `test_csv_append_mode` | Unit | Two runs same date; rows appended, not overwritten |

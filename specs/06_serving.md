@@ -55,7 +55,7 @@ Run inference for one or more tickers using the production model and latest avai
 ```json
 {
   "run_date": "2026-04-24",
-  "model": "nhits",
+  "model": "lightgbm",
   "predictions": [
     {
       "ticker": "AAPL",
@@ -64,13 +64,13 @@ Run inference for one or more tickers using the production model and latest avai
       "explanation": {
         "top_features": [
           {"feature": "close_zscore", "shap_value": 0.18},
-          {"feature": "macd_hist", "shap_value": 0.12},
-          {"feature": "bullish_percent", "shap_value": 0.09},
-          {"feature": "close_lag1", "shap_value": -0.07},
-          {"feature": "volume_zscore", "shap_value": 0.06}
+          {"feature": "macd_hist_norm", "shap_value": 0.12},
+          {"feature": "log_return_zscore_60", "shap_value": 0.09},
+          {"feature": "momentum_20", "shap_value": -0.07},
+          {"feature": "volume_log_ratio_20", "shap_value": 0.06}
         ],
-        "attention_weights": [0.02, 0.03, 0.15],
-        "explainer_used": "DeepExplainer"
+        "attention_weights": null,
+        "explainer_used": "TreeExplainer"
       }
     }
   ],
@@ -78,9 +78,11 @@ Run inference for one or more tickers using the production model and latest avai
 }
 ```
 
-- `confidence`: softmax probability of predicted class
-- `attention_weights`: null for N-HiTS
+- `confidence`: top-class softmax probability **before** thresholding. Always reflects what the model believed, even if τ demoted the signal to HOLD — keeps logging and monitoring honest.
+- `attention_weights`: null until a transformer candidate ships (Spec 05 §5.2)
 - `warnings`: list of non-fatal issues (e.g. sentiment unavailable for a ticker)
+
+**Confidence gating.** `ArtifactLoader` reads `confidence_threshold` (top-level field in `metadata.json`, see Spec 04 §7.4) and passes it to `InferenceEngine`. Any prediction with `confidence ≤ τ` is emitted as `HOLD`. If the artifact has no τ (legacy or no calibration), no gating is applied — the engine falls back to the raw argmax.
 
 **Error responses:**
 
@@ -99,7 +101,7 @@ Returns service status and production model metadata.
 ```json
 {
   "status": "ok",
-  "model": "nhits",
+  "model": "lightgbm",
   "model_date": "2026-04-23",
   "production_fold_f1_macro": 0.41,
   "quality_gate_passed": true
@@ -118,7 +120,7 @@ Returns prediction statistics since last model load.
   "signal_distribution": {"BUY": 0.31, "HOLD": 0.38, "SELL": 0.31},
   "tickers_served": 50,
   "last_prediction_at": "2026-04-24T06:00:12Z",
-  "model": "nhits"
+  "model": "lightgbm"
 }
 ```
 
@@ -312,7 +314,9 @@ security:
 - [ ] Predictions appended to `data/predictions/{date}.csv`; file never overwritten
 - [ ] Imputation uses artifact params — no recomputation at inference time
 - [ ] SHAP computed per ticker; fallback to KernelExplainer logged in response and CSV
-- [ ] Attention weights null for N-HiTS; populated for PatchTST and Autoformer
+- [ ] `attention_weights` is `null` for the v1 production candidate (LightGBM) — see Spec 05 §5.2
+- [ ] `ArtifactLoader.confidence_threshold` populated from `metadata.json`; falls back to `production_fold.confidence_threshold` for legacy artifacts; remains `None` if both are missing
+- [ ] `InferenceEngine` demotes BUY/SELL → HOLD when `confidence ≤ τ`; reported `confidence` is always the raw top-class probability regardless of demotion
 - [ ] Nightly batch calls `/predict` automatically after evaluation completes
 - [ ] On non-retraining nights, pipeline skips training/evaluation and runs prediction only
 - [ ] All requests logged as structured JSON with latency

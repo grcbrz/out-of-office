@@ -44,7 +44,7 @@ stocks-recommender/
 │   ├── ingestion/          # Data acquisition — Polygon.io (OHLCV, news) + FinBERT sentiment scoring
 │   ├── preprocessing/      # Cleaning, validation, normalisation
 │   ├── features/           # Feature engineering pipelines
-│   ├── models/             # Model definitions (Autoformer, baselines)
+│   ├── models/             # Model definitions (LightGBM v1 candidate, naive baseline)
 │   ├── evaluation/         # Metrics, explainability, reporting
 │   ├── serving/            # API / dashboard / inference endpoint
 │   └── monitoring/         # Drift detection, retraining triggers
@@ -134,14 +134,13 @@ stocks-recommender/
 
 ### Model Selection
 
-- Always benchmark against at least one naive baseline (e.g. last-value, moving average)
+- Always benchmark against at least one naive baseline (`BaselineLastDirectionWrapper` ships with v1)
 - Document justification for chosen architecture in the relevant spec
-- Candidate models to evaluate (in complexity order):
-  1. Baseline (naive, moving average, linear regression) — mandatory reference point
-  2. N-HiTS — efficient, strong on multi-horizon, handles seasonality decomposition natively
-  3. Autoformer — designed for long horizons; include when N-HiTS underperforms
+- Candidate models in scope (v1):
+  1. Baseline last-direction — mandatory reference point (Spec 05 §4.2 quality gate)
+  2. LightGBM (`lightgbm.LGBMClassifier`) — v1 production candidate (Spec 04 §6.1)
 
-- **Future experiments only (not current scope):** TimesNet
+- **Deferred until evidence justifies them:** real `neuralforecast` Autoformer / N-HiTS / PatchTST. The earlier draft of Spec 04 promised these but shipped sklearn placeholders under their names — that mismatch is the root cause we are correcting.
 
 > Seasonality must always be accounted for. Decompose series (trend + seasonal + residual) before modelling. Use STL or model-native decomposition where available. Validate seasonal periods empirically — do not assume.
 
@@ -247,7 +246,7 @@ pip-audit
 | Drift monitoring | `evidently`     |
 | Statistical drift gates | `scipy` (KS test, chi-squared, PSI) |
 | Retry + backoff | `tenacity`       |
-| Model architectures | `neuralforecast` |
+| Model architectures | `lightgbm` (v1); `neuralforecast` deferred |
 | Trading calendar | `pandas_market_calendars` |
 | Storage format | CSV (raw, processed, features, predictions) |
 | Security audit | `pip-audit`       |

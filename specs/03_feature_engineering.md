@@ -58,44 +58,69 @@ Full historical window loaded per ticker, sorted ascending by `date`.
 | `log_return_lag2` | `log_return` shifted 2 days |
 | `log_return_lag3` | `log_return` shifted 3 days |
 
-#### Trend
-| Feature | Definition | Params |
-|---|---|---|
-| `sma_10` | Simple moving average of close | window=10 |
-| `sma_20` | Simple moving average of close | window=20 |
-| `ema_10` | Exponential moving average of close | span=10 |
-| `ema_20` | Exponential moving average of close | span=20 |
-| `macd` | EMA(12) − EMA(26) | standard |
-| `macd_signal` | EMA(9) of macd | standard |
-| `macd_hist` | macd − macd_signal | |
-| `close_to_sma20` | `close / sma_20 − 1` | ratio, mean-reversion signal |
+> **Stationarity rule.** Every model-input feature must be in return-scale, ratio,
+> z-score, or bounded categorical form. Absolute price-level columns (raw SMA, EMA,
+> MACD, OBV, close lags, volume lags) are intermediate computations only — they
+> must not appear in `FEATURE_COLUMNS`. Rationale: a global model trained across
+> 50 tickers cannot learn from features whose scale is dominated by ticker
+> identity.
 
-#### Volume
+#### Trend (return-scale only)
 | Feature | Definition | Params |
 |---|---|---|
-| `obv` | Cumulative OBV: `+volume` if close > prev_close, else `−volume` | running cumsum |
-| `obv_lag1` | OBV shifted 1 day | |
+| `close_to_sma_10` | `close / sma_10 − 1` | mean-reversion signal vs short SMA |
+| `close_to_sma_20` | `close / sma_20 − 1` | mean-reversion signal vs medium SMA |
+| `close_to_ema_10` | `close / ema_10 − 1` | mean-reversion signal vs short EMA |
+| `close_to_ema_20` | `close / ema_20 − 1` | mean-reversion signal vs medium EMA |
+| `macd_norm` | `macd / close` | MACD divided by close — return-scale |
+| `macd_signal_norm` | `macd_signal / close` | |
+| `macd_hist_norm` | `macd_hist / close` | |
+
+`sma_*`, `ema_*`, `macd`, `macd_signal`, `macd_hist` are computed as intermediate
+columns to derive the features above. They are **not** persisted in
+`FeatureRecord` and **not** in `FEATURE_COLUMNS`.
+
+#### Volume (return-scale only)
+| Feature | Definition | Params |
+|---|---|---|
+| `obv_pct_change_20` | `obv.pct_change(20)` | 20-day OBV pct change — stationary derivative |
+| `volume_log_ratio_20` | `ln(volume / volume.rolling(20).mean())` | volume vs its own 20-day mean |
 | `vwap_ratio` | `close / vwap` | null if `vwap` is null |
 
-#### Lags
+`obv` is computed internally as a cumulative cumsum to derive `obv_pct_change_20`,
+then dropped from output.
+
+#### Volatility & Momentum (new)
+| Feature | Definition | Params |
+|---|---|---|
+| `realised_vol_20` | `log_return.rolling(20).std()` | rolling realised volatility |
+| `momentum_20` | `log_return.rolling(20).sum()` | cumulative log-return over 20 days |
+| `atr_14` | `ATR(14) / close` | Average True Range divided by close |
+| `log_return_zscore_60` | `(log_return − rolling_mean_60) / rolling_std_60` | min_periods=20 |
+
+#### Lags (returns only — no price-level lags)
 | Feature | Definition |
 |---|---|
-| `close_lag1` | `close` shifted 1 day |
-| `close_lag2` | `close` shifted 2 days |
-| `close_lag3` | `close` shifted 3 days |
-| `volume_lag1` | `volume` shifted 1 day |
-| `volume_lag2` | `volume` shifted 2 days |
-| `volume_lag3` | `volume` shifted 3 days |
+| `log_return_lag1` | `log_return` shifted 1 day |
+| `log_return_lag2` | `log_return` shifted 2 days |
+| `log_return_lag3` | `log_return` shifted 3 days |
 
-#### Seasonality
+`close_lag*` and `volume_lag*` removed — non-stationary, redundant with
+`log_return_lag*` and `volume_log_ratio_20`.
+
+#### Seasonality (cyclic encoded)
 | Feature | Definition | Encoding |
 |---|---|---|
-| `day_of_week` | 0=Monday … 4=Friday | int |
-| `week_of_year` | ISO week number | int |
-| `month` | 1–12 | int |
+| `dow_sin` | `sin(2π · dayofweek / 5)` | float, trading week period |
+| `dow_cos` | `cos(2π · dayofweek / 5)` | float |
+| `month_sin` | `sin(2π · month / 12)` | float, yearly period |
+| `month_cos` | `cos(2π · month / 12)` | float |
 | `is_month_end` | Last trading day of calendar month | bool |
 
-> Seasonality features are always included. Do not treat them as optional. Weekly and monthly cycles are empirically present in US equity volume and return patterns.
+Cyclic encoding (sin/cos pair) avoids treating Monday=0 and Friday=4 as ordinal
+distance "4". Tree models can split on the pair; linear and neural models can
+learn the cycle natively. `week_of_year`, raw `day_of_week` and raw `month`
+removed — redundant under cyclic encoding.
 
 #### Sentiment Passthrough
 | Feature | Source field | Notes |
@@ -162,7 +187,7 @@ Before writing output, run a null audit across all feature columns:
 - Rows where any core feature is null after the warm-up period are dropped and logged
 - Sentiment nulls are expected and not flagged as warnings
 
-**Warm-up period:** First 26 trading days per ticker are dropped from output (minimum history required for EMA(26) / MACD). This is the minimum row count to produce valid features — rows before this are structurally incomplete.
+**Warm-up period:** First **60 trading days** per ticker are dropped from output (minimum history required for `log_return_zscore_60`, the longest-window feature). EMA(26) / MACD warmup is shorter (26 days) but no longer the binding constraint.
 
 ---
 
@@ -172,14 +197,18 @@ Before writing output, run a null audit across all feature columns:
 src/features/
 ├── __init__.py
 ├── returns.py          # compute_log_returns, compute_forward_return
-├── trend.py            # compute_sma, compute_ema, compute_macd, compute_close_to_sma
-├── volume.py           # compute_obv, compute_vwap_ratio
-├── lags.py             # compute_lag_features
-├── seasonality.py      # compute_seasonality_features
+├── trend.py            # compute_sma, compute_ema, compute_macd (intermediate)
+│                       # compute_close_to_ma_ratios, compute_macd_normalised (model inputs)
+├── volume.py           # compute_obv (intermediate), compute_obv_pct_change,
+│                       # compute_volume_log_ratio, compute_vwap_ratio
+├── volatility.py       # compute_realised_volatility, compute_momentum,
+│                       # compute_atr, compute_return_zscore
+├── lags.py             # compute_log_return_lags
+├── seasonality.py      # compute_seasonality_features (cyclic encoded)
 ├── sentiment.py        # passthrough_sentiment
 ├── target.py           # compute_target_label (percentile-based, per ticker)
 ├── audit.py            # null_audit, lookahead_bias_guard
-├── schema.py           # FeatureRecord (Pydantic)
+├── schema.py           # FeatureRecord (Pydantic), FEATURE_COLUMNS
 └── pipeline.py         # FeaturePipeline — orchestrates full run per ticker
 ```
 
@@ -216,17 +245,20 @@ Target distribution logged to detect label imbalance before training.
 ## 9. Acceptance Criteria
 
 - [ ] All features computed exclusively from data at time `≤ t`
-- [ ] `forward_return` present as column but absent from model feature list
+- [ ] `forward_return` present as column but absent from `FEATURE_COLUMNS`
+- [ ] No absolute price-level column appears in `FEATURE_COLUMNS` (stationarity rule)
 - [ ] Final row per ticker (no valid `t+1`) dropped from output
 - [ ] `LookaheadBiasError` raised if guard detects any violation
-- [ ] First 26 rows per ticker dropped (MACD warm-up)
+- [ ] First 60 rows per ticker dropped (`log_return_zscore_60` warm-up)
 - [ ] Log returns computed as `ln(close_t / close_t-1)`; first row null (dropped)
-- [ ] SMA(10), SMA(20), EMA(10), EMA(20) computed correctly per ticker
-- [ ] MACD = EMA(12) − EMA(26); signal = EMA(9) of MACD; hist = MACD − signal
-- [ ] OBV computed as running cumsum with correct sign logic; no lookahead
+- [ ] `close_to_sma_10/20`, `close_to_ema_10/20` computed correctly per ticker
+- [ ] `macd_norm`, `macd_signal_norm`, `macd_hist_norm` = MACD components / close
+- [ ] `obv_pct_change_20` is `obv.pct_change(20)`; raw `obv` not in output
+- [ ] `volume_log_ratio_20` = `ln(volume / 20-day mean volume)`
+- [ ] `realised_vol_20`, `momentum_20`, `atr_14`, `log_return_zscore_60` present
 - [ ] `vwap_ratio` is null when `vwap` source field is null
-- [ ] Lag features (close and volume, lags 1–3) computed with correct shift
-- [ ] Seasonality features present on every row; no nulls
+- [ ] `log_return_lag1/2/3` computed with correct shift; no `close_lag*` or `volume_lag*`
+- [ ] Cyclic seasonality (`dow_sin/cos`, `month_sin/cos`, `is_month_end`) present on every row
 - [ ] Sentiment columns passed through; nulls accepted; `sentiment_available` always present
 - [ ] Target label: BUY/HOLD/SELL assigned via 30th/70th percentile of 60-day rolling forward return per ticker
 - [ ] Rows with fewer than 5 days of return history for percentile computation dropped
@@ -242,12 +274,17 @@ Target distribution logged to detect label imbalance before training.
 | Test | Type | Notes |
 |---|---|---|
 | `test_log_return_computation` | Unit | Spot-check formula; first row null |
-| `test_sma_ema_values` | Unit | Verify against known reference values |
-| `test_macd_components` | Unit | MACD, signal, hist correct for synthetic series |
-| `test_obv_sign_logic` | Unit | Close up → +volume; close down → −volume |
+| `test_close_to_ma_ratios_returns_scale` | Unit | `close_to_sma_20[t] == close[t]/sma_20[t] - 1` |
+| `test_macd_normalised_returns_scale` | Unit | `macd_norm == macd / close` for known synthetic series |
+| `test_obv_pct_change_no_cumulative_in_output` | Unit | `obv` absent from FEATURE_COLUMNS; `obv_pct_change_20` present |
+| `test_volume_log_ratio` | Unit | `volume_log_ratio_20 == ln(volume / rolling_mean_20)` |
+| `test_realised_volatility_correct` | Unit | Against `log_return.rolling(20).std()` reference |
+| `test_momentum_correct` | Unit | Against `log_return.rolling(20).sum()` reference |
+| `test_atr_normalised_by_close` | Unit | `atr_14[t] == TR.rolling(14).mean()[t] / close[t]` |
+| `test_return_zscore_correct` | Unit | Hand-computed reference on small series |
 | `test_vwap_ratio_null_when_vwap_null` | Unit | vwap=None → vwap_ratio=None |
-| `test_lag_features_shift` | Unit | close_lag1[t] == close[t-1] |
-| `test_seasonality_completeness` | Unit | No nulls in any seasonality column |
+| `test_log_return_lags_shift` | Unit | `log_return_lag1[t] == log_return[t-1]` |
+| `test_seasonality_cyclic_completeness` | Unit | dow_sin/cos, month_sin/cos in [-1,1]; no nulls |
 | `test_target_buy_sell_hold_distribution` | Unit | Synthetic series; assert ~30/40/30 split |
 | `test_target_uses_forward_return` | Unit | target[t] derived from close[t+1] |
 | `test_lookahead_bias_guard_passes` | Unit | Valid feature set; no error raised |

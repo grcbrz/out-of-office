@@ -9,17 +9,17 @@ retry:
 
 fixed_universe:
   - ILLR
-  - PAPL
   - BMNR
+  - PAPL
   - GPUS
-  - SMCI
   - BMNU
-  - NVTS
-  - ELPW
-  - LNAI
   - INTC
-  - TSLL
-  - TLRY
-  - OPEN
   - NVDA
-  - BMNG
+  - ELPW
+  - OPEN
+  - NOK
+  - NVTS
+  - TSLL
+  - BYND
+  - FCHL
+  - AAPL

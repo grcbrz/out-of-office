@@ -117,66 +117,60 @@ Target distribution is approximately 30/40/30 (BUY/HOLD/SELL). Apply class weigh
 
 ## 6. Model Architectures
 
-All three models receive the same input tensor per fold. Implementations sourced from `neuralforecast` (N-HiTS, Autoformer) and a custom PatchTST wrapper or `neuralforecast` if available.
+> **History.** Earlier drafts of this spec listed three candidate transformers
+> (N-HiTS, PatchTST, Autoformer) sourced from `neuralforecast`. The shipped
+> implementations were sklearn placeholders under transformer-flavoured names —
+> a mismatch between spec and code. v1 corrects that by shipping a single,
+> truthfully-named candidate. Real neuralforecast architectures are deferred
+> until daily 3-class equity classification with ~12k training rows produces
+> evidence that transformers outperform gradient-boosted trees here, which is
+> not the empirical default on this scale of data.
 
-### 6.1 N-HiTS
+> **Mandatory naive baseline.** Every fold trains a `BaselineLastDirectionWrapper` alongside the candidate (Spec 05 §4.2). The baseline is **never** a production candidate — `select_winner` filters it out — but its F1-macro is logged per fold and aggregated, and the quality gate (Spec 05 §4.2) requires the production model to beat it by `min_delta_over_baseline` F1 points. Without this benchmark there is no answer to "did the model add anything over the trivial rule?".
 
-- Multi-rate signal sampling; native hierarchical decomposition handles trend and seasonality
-- Input: univariate per ticker with exogenous features
-- Config key: `models.nhits`
+### 6.1 LightGBM (v1 production candidate)
 
-```yaml
-# configs/models/nhits.yaml
-input_size: 30        # lookback window (trading days)
-h: 1                  # forecast horizon (t+1)
-n_freq_downsample: [2, 1, 1]
-mlp_units: [[512, 512], [512, 512], [512, 512]]
-dropout_prob_theta: 0.1
-max_steps: 500
-learning_rate: 1e-3
-random_seed: 42
-```
-
-### 6.2 PatchTST
-
-- Patch-based transformer; strong on local temporal patterns in financial series
-- Input: multivariate (all features as channels)
-- Config key: `models.patchtst`
+- Multi-class gradient-boosted trees (`lightgbm.LGBMClassifier`)
+- Robust to mixed-scale features; cyclic calendar encodings handled natively without scaling
+- Class imbalance handled via `sample_weight` derived from `DataPreparer.compute_class_weights` (per-fold, computed on training data only)
+- SHAP via `shap.TreeExplainer` — exact, fast, no sampling background needed
+- Config key: `models.lightgbm`
 
 ```yaml
-# configs/models/patchtst.yaml
-input_size: 42        # lookback window; must be divisible by patch_len
-patch_len: 6
-stride: 3
-h: 1
-d_model: 64
-n_heads: 4
-d_ff: 128
-dropout: 0.1
-max_steps: 500
-learning_rate: 1e-3
+# configs/models/lightgbm.yaml
+n_estimators: 400
+learning_rate: 0.05
+num_leaves: 31
+max_depth: -1            # num_leaves is the binding cap
+min_child_samples: 20
+feature_fraction: 0.9
+bagging_fraction: 0.8
+bagging_freq: 5
+reg_alpha: 0.0
+reg_lambda: 0.1
 random_seed: 42
+n_jobs: -1
 ```
 
-### 6.3 Autoformer
+Hardcoded inside the wrapper (not configurable):
 
-- Included for completeness; expected to underperform N-HiTS and PatchTST on t+1
-- Auto-correlation decomposition; higher compute cost on M2
-- Config key: `models.autoformer`
+| Setting | Value | Reason |
+|---|---|---|
+| `objective` | `multiclass` | We classify SELL/HOLD/BUY |
+| `num_class` | `3` | Pipeline emits exactly 3 targets |
+| `metric` | `multi_logloss` | Tracks the training objective |
 
-```yaml
-# configs/models/autoformer.yaml
-input_size: 42
-h: 1
-hidden_size: 64
-n_head: 4
-dropout: 0.1
-max_steps: 300        # reduced — M2 compute budget
-learning_rate: 1e-3
-random_seed: 42
-```
+### 6.2 Adding additional candidates
 
-All random seeds fixed globally:
+The harness iterates `_CANDIDATE_NAMES` in `src/models/training_pipeline.py` and selects on F1-macro. To add a candidate (e.g. a real `neuralforecast` Autoformer):
+
+1. Implement `BaseModelWrapper` subclass under `src/models/architectures/{name}.py`.
+2. Append the model name to `_CANDIDATE_NAMES`.
+3. Branch in `_instantiate_wrapper`.
+4. Add `configs/models/{name}.yaml`.
+5. Add the name to `_PREFERENCE_ORDER` in `src/models/selector.py` for tie-breaks.
+
+Random seeds remain fixed globally for reproducibility:
 
 ```python
 import random, numpy as np, torch
@@ -195,11 +189,11 @@ for each fold:
     2. Compute imputation params on train fold
     3. Apply imputation to train + val
     4. Compute class weights on train fold
-    5. Train N-HiTS, PatchTST, Autoformer in parallel (multiprocessing)
-    6. Evaluate each model on val fold → F1-macro
-    7. Select winner (highest F1-macro; tie → prefer N-HiTS > PatchTST > Autoformer)
-    8. Log all three models + metrics to MLflow
-    9. If final fold: persist winner artifact to models/production/
+    5. Train every candidate + the baseline (sequentially in v1; parallelisation deferred until candidates ≥ 2)
+    6. Evaluate each model on val fold → F1-macro (baseline included, but excluded from selection)
+    7. Select winner (highest F1-macro among non-baseline candidates; tie-break uses `_PREFERENCE_ORDER`)
+    8. Log every model's metrics to MLflow
+    9. If final fold: persist winner artifact to models/production/, including baseline benchmark in metadata
 ```
 
 ### 7.2 Parallel Training
@@ -211,7 +205,22 @@ Each model trained in a separate process via `concurrent.futures.ProcessPoolExec
 
 ### 7.3 Early Stopping
 
-All three models use validation loss as the early stopping criterion (patience = 20 steps). Prevents overfitting on small folds.
+All neural-network candidates use validation loss as the early stopping criterion (patience = 20 steps). Prevents overfitting on small folds. LightGBM uses `n_estimators` capped via YAML (`configs/models/lightgbm.yaml`) and bagging instead.
+
+### 7.4 Confidence-Threshold Calibration (per fold)
+
+After each model is fit and predictions on the validation fold are produced, the harness calibrates a **confidence threshold τ** by grid-searching `DEFAULT_CANDIDATE_TAUS` (`0.34, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70`). For each candidate τ:
+
+1. Apply the threshold: any prediction with `max(predict_proba) ≤ τ` is demoted to HOLD.
+2. Compute strategy returns and Sharpe on the thresholded prediction series.
+
+The τ that produces the highest validation Sharpe wins (ties broken by preferring the **lowest** τ — keeps the strategy from collapsing to all-HOLD when several thresholds are statistically equivalent). If every τ produces fewer than 5% non-HOLD signals the model is treated as having no usable confidence signal: the lowest candidate τ is returned and the quality gate (Spec 05 §4) will catch the resulting Sharpe / hit rate failure.
+
+**Honesty caveat.** τ is calibrated on the same validation window the per-fold financial metrics are reported on, which makes the in-fold Sharpe slightly optimistic. With 21-day val windows splitting further would leave too few rows for stable calibration. The walk-forward harness mitigates this — across N folds the optimism averages out, and serving trades the next fold using the previous fold's τ.
+
+τ is logged per fold and persisted at the **top level** of `metadata.json` (`confidence_threshold`) so `ArtifactLoader` (Spec 06) can read it without depending on the shape of `production_fold`. The baseline never has a τ — its proba is one-hot so thresholding is a no-op.
+
+**Selection vs. trading.** Classification metrics (F1, MCC, ROC-AUC) are computed on **raw** predictions because thresholding collapses the confusion matrix toward HOLD and would bias model selection toward strategies that simply stop trading. Financial metrics (Sharpe, MDD, hit rate, signal distribution, signal counts) are computed on the **thresholded** predictions because that is what production trades.
 
 ---
 
@@ -219,9 +228,9 @@ All three models use validation loss as the early stopping criterion (patience =
 
 **Metric:** F1-macro on validation fold (equal weight across BUY, HOLD, SELL classes)
 
-**Tie-breaking:** N-HiTS > PatchTST > Autoformer (prefer simpler architecture)
+**Tie-breaking:** order defined by `_PREFERENCE_ORDER` in `src/models/selector.py` (v1: `["lightgbm"]`; later candidates appended in preferred order).
 
-**Winner logged** with tag `production=true` in MLflow. All three runs logged regardless.
+**Winner logged** with tag `production=true` in MLflow. Every run is logged, including the baseline.
 
 ---
 
@@ -232,14 +241,17 @@ All three models use validation loss as the early stopping criterion (patience =
 Contents:
 ```
 models/production/
-└── nhits/                        # or patchtst / autoformer
-    ├── model.pt                  # PyTorch weights
+└── lightgbm/                     # winning candidate name
+    ├── model.pkl                 # pickled wrapper state (booster + features + config)
     ├── config.yaml               # exact hyperparams used
     ├── imputation_params.json    # median values for null imputation
     ├── ticker_map.json           # ticker → ticker_id mapping
     ├── class_weights.json        # per-class weights used in training
-    └── metadata.json             # fold dates, val metrics, git hash, mlflow run id
+    ├── monitoring_reference.json # signal counts + training window for drift gates
+    └── metadata.json             # fold dates, val metrics, baseline benchmark, git hash, mlflow run id
 ```
+
+Future neural-forecast candidates would persist a `model.pt` instead of (or alongside) `model.pkl` — the artifact loader handles both.
 
 Previous production artifacts are overwritten. Git history + MLflow provide the audit trail.
 
@@ -275,7 +287,7 @@ data:
 training:
   random_seed: 42
   early_stopping_patience: 20
-  n_workers: 3            # one per model; tune down if M2 memory pressure
+  n_workers: 1            # v1 ships with a single candidate; raise when more land
 
 mlflow:
   experiment_name: stock-recommender
@@ -294,11 +306,11 @@ src/models/
 ├── __init__.py
 ├── architectures/
 │   ├── __init__.py
-│   ├── nhits.py            # NHiTSWrapper — train, predict, save, load
-│   ├── patchtst.py         # PatchTSTWrapper
-│   └── autoformer.py       # AutoformerWrapper
-├── harness.py              # WalkForwardHarness — fold generation + orchestration
-├── selector.py             # ModelSelector — F1-macro comparison, tie-breaking
+│   ├── base.py             # BaseModelWrapper — train/predict/predict_proba/save/load contract
+│   ├── lightgbm.py         # LightGBMWrapper — v1 production candidate
+│   └── baseline.py         # BaselineLastDirectionWrapper — naive benchmark (Spec 05 §4.2)
+├── harness.py              # generate_folds — walk-forward fold construction
+├── selector.py             # ModelResult, select_winner — F1-macro comparison, tie-breaking
 ├── preparation.py          # DataPreparer — encoding, imputation, class weights
 ├── persistence.py          # save_artifact, load_artifact
 └── training_pipeline.py    # TrainingPipeline — entry point
@@ -316,12 +328,14 @@ src/models/
 - [ ] Model selection uses F1-macro on val fold; tie-breaking order respected
 - [ ] All three models + metrics logged to MLflow per fold (parent + nested child runs)
 - [ ] Production artifact written only from final fold winner
-- [ ] `models/production/` contains model weights, config, imputation params, ticker map, metadata
+- [ ] `models/production/` contains `model.pkl`, `config.yaml`, `imputation_params.json`, `ticker_map.json`, `class_weights.json`, `monitoring_reference.json`, `metadata.json`
+- [ ] `metadata.json` contains the baseline benchmark (`baseline.name`, `baseline.mean_f1_macro`, `baseline.production_fold_f1_macro`)
+- [ ] `metadata.json` contains a top-level `confidence_threshold` field (the per-fold τ persisted on the production fold's winning candidate)
+- [ ] Per-fold metrics dict carries `confidence_threshold`; financial metrics are computed on thresholded predictions; classification metrics on raw predictions
 - [ ] Random seeds fixed and logged; rerunning same config produces identical results
-- [ ] Early stopping active for all three models (patience=20)
 - [ ] `ticker_map.json` stable across runs; new tickers appended, existing never re-encoded
 - [ ] Training aborts with `TrainingDataError` if any NaN remains after imputation
-- [ ] All hyperparams sourced from YAML config; no hardcoded values in code
+- [ ] Hyperparameters sourced from `configs/models/{name}.yaml`; pipeline-invariants (`objective`, `num_class`, `metric`) hardcoded and documented in §6.1
 
 ---
 
@@ -335,15 +349,22 @@ src/models/
 | `test_class_weights_per_fold` | Unit | Weights inverse to class frequency in train fold |
 | `test_ticker_encoding_stable` | Unit | Re-encoding same tickers produces same IDs |
 | `test_ticker_encoding_append` | Unit | New ticker gets new ID; existing IDs unchanged |
-| `test_model_selection_f1_macro` | Unit | Higher F1-macro wins |
-| `test_model_selection_tiebreak` | Unit | Equal F1 → N-HiTS preferred |
+| `test_model_selection_f1_macro` | Unit | Higher F1-macro wins among candidates |
+| `test_model_selection_tiebreak_prefers_lightgbm` | Unit | Equal F1 → preference order respected |
+| `test_select_winner_excludes_baseline` | Unit | Baseline never returned as production winner |
+| `test_lightgbm_wrapper_train_predict_roundtrip` | Unit | Fit on synthetic data; predict + predict_proba return correct shapes |
+| `test_lightgbm_wrapper_class_weights_applied` | Unit | sample_weight passed to `model.fit` reflects per-class weights |
+| `test_apply_confidence_threshold` | Unit | Predictions with `max(proba) ≤ τ` demoted to HOLD; others unchanged |
+| `test_calibrate_threshold_picks_sharpe_max` | Unit | Synthetic proba + log-return series; calibrator returns the τ with the best Sharpe |
+| `test_calibrate_threshold_lowest_tau_on_tie` | Unit | When two τ produce equal Sharpe the lower one is returned (more trades) |
+| `test_calibrate_threshold_degenerate_fallback` | Unit | If every τ leaves <5% directional signals the lowest candidate is returned |
+| `test_fold_metrics_apply_threshold_to_financial_only` | Unit | Per-fold metrics: F1 on raw preds, hit_rate on thresholded preds |
 | `test_lookahead_guard_before_training` | Unit | `forward_return` in features → `LookaheadBiasError` |
 | `test_nan_after_imputation_raises` | Unit | Residual NaN → `TrainingDataError` |
 | `test_random_seed_reproducibility` | Unit | Two runs same config → identical val metrics |
-| `test_artifact_contents` | Unit | All required files present in production artifact |
+| `test_artifact_contents_includes_baseline` | Unit | `metadata.json` carries baseline benchmark fields |
 | `test_mlflow_run_logged` | Integration | Mock training; assert MLflow run created with params + metrics |
-| `test_parallel_training_returns_all_three` | Integration | All three model results returned per fold |
-| `test_full_harness_mock` | Integration | 2 folds, mock models; assert fold loop, selection, artifact write |
+| `test_full_harness_mock` | Integration | 2 folds, mock candidate + real baseline; assert fold loop, selection, artifact write |
 
 ---
 

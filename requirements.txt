@@ -21,6 +21,7 @@ idna==3.13
 iniconfig==2.3.0
 joblib==1.5.3
 korean-lunar-calendar==0.3.1
+lightgbm==4.5.0
 librt==0.9.0
 license-expression==30.4.4
 llvmlite==0.47.0
@@ -32,6 +33,7 @@ mlflow==3.11.1
 msgpack==1.1.2
 mypy_extensions==1.1.0
 mypy==1.20.2
+neuralforecast==3.1.7
 numba==0.65.1
 numpy==2.4.4
 packageurl-python==0.17.6

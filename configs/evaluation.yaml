@@ -1,8 +1,15 @@
 quality_gates:
+  # Absolute floors — guard against catastrophic regression regardless of baseline.
   f1_macro_min: 0.40
   mcc_min: 0.10
   hit_rate_min: 0.52
   max_signal_concentration: 0.70   # no single class > 70% of predictions
+
+  # Baseline delta — the real bar. Production model must beat the naive
+  # last-direction baseline by at least this many F1-macro points on the
+  # production fold. Set to 0.02 = 2 percentage points; tighten as the model
+  # matures.
+  min_delta_over_baseline: 0.02
 
 shap:
   background_sample_size: 100      # for KernelExplainer fallback

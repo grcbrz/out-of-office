@@ -20,6 +20,7 @@ class ServingExplainer:
         self._model = model
         self._trained_features = trained_features
         self._shap_explainer: Any = None
+        self._explainer_type: str = "none"
 
     def explain(self, feature_row: pd.Series) -> dict:
         """Return SHAP top-5 features for a single prediction row."""
@@ -29,54 +30,65 @@ class ServingExplainer:
             if self._shap_explainer is None:
                 return {"top_features": [], "explainer_used": "none"}
 
-            # Prepare features in correct order
             cols = [c for c in self._trained_features if c in feature_row.index]
-            X = feature_row[cols].values.reshape(1, -1).astype(float)
+            X = feature_row[cols].fillna(0.0).values.reshape(1, -1).astype(float)
 
-            shap_values = self._shap_explainer.shap_values(X)
+            raw = self._shap_explainer.shap_values(X)
 
-            # TreeExplainer returns (n_samples, n_features, n_classes) for multiclass
-            # KernelExplainer returns (n_samples, n_features) or list of arrays
-            if isinstance(shap_values, np.ndarray):
-                if shap_values.ndim == 3:
-                    # Multiclass from TreeExplainer: shape (1, n_features, n_classes)
-                    # Use class 2 (BUY) by convention
-                    shap_vals = np.abs(shap_values[0, :, 2] if shap_values.shape[2] > 2 else shap_values[0, :, 0])
-                elif shap_values.ndim == 2:
-                    # Binary or single sample: shape (n_features,) or (1, n_features)
-                    shap_vals = np.abs(shap_values[0]) if shap_values.shape[0] == 1 else np.abs(shap_values)
-                else:
-                    shap_vals = np.abs(shap_values)
-            elif isinstance(shap_values, list):
-                # KernelExplainer multiclass output: list per class
-                shap_vals = np.abs(shap_values[2][0] if len(shap_values) > 2 else shap_values[0][0])
+            # Normalise to (n_features,) signed values for the predicted-class slice.
+            # TreeExplainer multiclass → ndarray (1, n_features, n_classes) in SHAP ≥0.41
+            # KernelExplainer multiclass → list of n_classes arrays each (1, n_features)
+            if isinstance(raw, np.ndarray) and raw.ndim == 3:
+                # shape (1, n_features, n_classes) — use mean abs across classes for ranking,
+                # keep signed BUY slice for the reported value
+                abs_vals = np.abs(raw[0]).mean(axis=1)       # (n_features,)
+                signed_vals = raw[0, :, 2] if raw.shape[2] > 2 else raw[0, :, 0]
+            elif isinstance(raw, list):
+                # list[n_classes] of (1, n_features)
+                stacked = np.array([c[0] for c in raw])      # (n_classes, n_features)
+                abs_vals = np.abs(stacked).mean(axis=0)
+                signed_vals = stacked[2] if len(raw) > 2 else stacked[0]
+            elif isinstance(raw, np.ndarray) and raw.ndim == 2:
+                abs_vals = np.abs(raw[0])
+                signed_vals = raw[0]
             else:
-                shap_vals = np.abs(shap_values)
-            top_indices = np.argsort(shap_vals)[::-1][:5]
-            top_features = [
-                {"feature": cols[i], "shap_value": float(shap_vals[i])}
-                for i in top_indices if i < len(cols)
-            ]
+                abs_vals = np.abs(raw)
+                signed_vals = raw
 
-            return {"top_features": top_features, "explainer_used": "TreeExplainer"}
+            top_idx = np.argsort(abs_vals)[::-1][:5]
+            top_features = [
+                {"feature": cols[i], "shap_value": float(signed_vals[i])}
+                for i in top_idx if i < len(cols)
+            ]
+            return {"top_features": top_features, "explainer_used": self._explainer_type}
 
         except Exception as e:
             logger.warning("SHAP explanation failed: %s", e)
             return {"top_features": [], "explainer_used": "none"}
 
     def _init_explainer(self) -> None:
-        """Initialize SHAP explainer if possible."""
-        try:
-            import shap
-            # For sklearn tree/ensemble models, use TreeExplainer (much faster than KernelExplainer)
-            if hasattr(self._model, "estimators_"):  # ExtraTreesClassifier, RandomForest, etc.
+        """Initialise SHAP explainer. TreeExplainer for LightGBM/tree models; KernelExplainer fallback."""
+        import shap
+
+        self._explainer_type = "none"
+        # booster_ → LightGBM/XGBoost; estimators_ → sklearn forests
+        is_tree = hasattr(self._model, "booster_") or hasattr(self._model, "estimators_")
+        if is_tree:
+            try:
                 self._shap_explainer = shap.TreeExplainer(self._model)
-            elif hasattr(self._model, "predict"):
-                # Fallback to KernelExplainer with minimal background
+                self._explainer_type = "TreeExplainer"
+                logger.info("SHAP TreeExplainer initialised for %s", type(self._model).__name__)
+                return
+            except Exception as exc:
+                logger.warning("TreeExplainer failed (%s); trying KernelExplainer", exc)
+
+        if hasattr(self._model, "predict_proba"):
+            try:
+                background = np.zeros((10, len(self._trained_features)))
                 self._shap_explainer = shap.KernelExplainer(
-                    self._model.predict,
-                    np.zeros((10, len(self._trained_features))),
+                    self._model.predict_proba, background
                 )
-        except Exception as e:
-            logger.warning("Could not initialize SHAP explainer: %s", e)
-            self._shap_explainer = None
+                self._explainer_type = "KernelExplainer"
+                logger.info("SHAP KernelExplainer initialised for %s", type(self._model).__name__)
+            except Exception as exc:
+                logger.warning("KernelExplainer also failed: %s", exc)

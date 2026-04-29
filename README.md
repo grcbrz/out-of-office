@@ -12,9 +12,9 @@ scripts/run_nightly.py
 ├── Preprocessing    — cleaning, imputation, outlier detection
 ├── Feature Eng.     — log returns, MACD, OBV, VWAP, lags, seasonality
 ├── Monitoring       — feature drift (KS+PSI), prediction drift, hit-rate degradation
-├── Training         — walk-forward harness; N-HiTS / Autoformer
-├── Evaluation       — F1-macro, MCC, Sharpe, quality gate
-└── Prediction       — POST /predict via internal HTTP client
+├── Training         — walk-forward harness; LightGBM vs naive baseline
+├── Evaluation       — F1-macro, MCC, Sharpe, confidence threshold calibration, quality gate
+└── Prediction       — POST /predict via internal HTTP client (server auto-reloads after training)
 ```
 
 The FastAPI server runs as a persistent background service (launchd). The nightly batch script calls it via `PredictionClient` once the pipeline completes.
@@ -94,7 +94,7 @@ On a fresh install the model must be trained before the server can serve predict
 ```bash
 make run &                               # start server in background (will return 503 initially)
 make nightly START_DATE=2024-01-02      # ingest 2 years + train + evaluate
-# once training completes, restart the server to pick up the new artifact
+# server reloads automatically via POST /reload after a quality-gate pass
 ```
 
 ---
@@ -112,6 +112,7 @@ Authorization: Bearer <API_TOKEN>
 | `/health` | GET | `200 OK` when model loaded; `503` in degraded mode |
 | `/metrics` | GET | In-memory counters (total predictions, signal distribution) |
 | `/predict` | POST | Generate BUY/HOLD/SELL signals |
+| `/reload` | POST | Hot-reload the production artifact without restarting the server |
 
 ### Example predict request
 
@@ -119,22 +120,25 @@ Authorization: Bearer <API_TOKEN>
 curl -X POST http://127.0.0.1:8000/predict \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"tickers": ["AAPL", "MSFT"], "predict_date": "2026-04-24"}'
+  -d '{"tickers": ["AAPL", "MSFT"], "predict_date": "2026-04-29"}'
 ```
 
 ```json
 {
-  "run_date": "2026-04-24",
-  "model": "autoformer",
+  "run_date": "2026-04-29",
+  "model": "lightgbm",
   "predictions": [
     {
       "ticker": "AAPL",
       "signal": "BUY",
-      "confidence": 0.62,
+      "confidence": 0.61,
       "explanation": {
         "top_features": [
-          {"feature": "macd", "shap_value": 0.041},
-          {"feature": "log_return", "shap_value": 0.033}
+          {"feature": "log_return_lag1", "shap_value": 0.038},
+          {"feature": "macd", "shap_value": 0.027},
+          {"feature": "company_news_score", "shap_value": 0.019},
+          {"feature": "obv_change", "shap_value": 0.014},
+          {"feature": "close_zscore", "shap_value": -0.011}
         ],
         "explainer_used": "TreeExplainer"
       }
@@ -146,15 +150,15 @@ curl -X POST http://127.0.0.1:8000/predict \
 
 Omit `tickers` to get signals for the full configured universe. Omit `predict_date` to default to today.
 
-Per-prediction explanations use SHAP TreeExplainer for tree-based models (Autoformer) and KernelExplainer fallback for MLP (N-HiTS).
+Per-prediction explanations use SHAP `TreeExplainer` (exact, no sampling) for LightGBM. Low-confidence signals (max class probability ≤ calibrated τ) are demoted to HOLD before being returned.
 
 ---
 
 ## Development
 
 ```bash
-make test        # Run full test suite (250 tests)
-make coverage    # Tests + coverage report (≥85%; currently ~88%)
+make test        # Run full test suite (290 tests)
+make coverage    # Tests + coverage report (≥85%)
 make lint        # ruff + mypy (zero errors)
 make format      # black
 make audit       # pip-audit security scan
@@ -252,29 +256,34 @@ FinBERT (`transformers`, `torch`) loads once at ingestion startup (~5–10 s fro
 
 ## Models
 
-Two candidates are evaluated in walk-forward cross-validation (252-day train window, 21-day step, minimum 3 folds). The model with the highest **mean F1-macro across all folds** wins and is written exclusively to `models/production/` using its final-fold artifact — previous winners are evicted automatically.
+Each nightly training run evaluates **LightGBM** against a **naive last-direction baseline** using walk-forward cross-validation (configurable via `configs/training.yaml`; default 120-day train window, 20-day step, minimum 3 folds). LightGBM is the sole production candidate — the baseline exists only as a quality floor that the production model must beat.
 
-| Model | Sklearn backend | Notes |
+| Role | Implementation | Notes |
 |---|---|---|
-| **N-HiTS** | MLPClassifier | Multi-horizon; strong on seasonality decomposition |
-| **Autoformer** | ExtraTreesClassifier | Strong on irregular patterns; class-balanced training |
+| **Production candidate** | `lightgbm.LGBMClassifier` | Multi-class (SELL/HOLD/BUY); exact SHAP via TreeExplainer; handles mixed-scale features natively |
+| **Naive baseline** | Last-direction rule (percentile thresholds on `log_return_lag1`) | Never promoted to production; sets the minimum acceptable F1 delta |
 
-> The sklearn backends are a pragmatic substitute until `neuralforecast` is installed. `torch` is already present (added for FinBERT sentiment scoring). All shared logic lives in `BaseModelWrapper` (`src/models/architectures/base.py`); each wrapper implements only `_build_model()`. Swapping in the real architecture requires replacing that one method — nothing else changes.
+The production model is selected by **mean F1-macro across all folds**, written to `models/production/lightgbm/`, and previous artifacts are evicted automatically.
 
-Ties in F1-macro are broken in the order N-HiTS → Autoformer.
+### Confidence thresholding
+
+After each fold, a confidence threshold τ is calibrated by grid-searching validation Sharpe over candidate values (0.34–0.70). At inference time, any prediction whose top class probability ≤ τ is demoted to HOLD. This concentrates trading on high-conviction signals.
+
+τ is stored in the artifact metadata and loaded by the server — no manual configuration required.
 
 ### Quality gate
 
-Evaluated after each training run against the production fold:
+Evaluated after each training run against the production fold. Training must pass **all** absolute floors **and** beat the baseline:
 
-| Metric | Threshold |
+| Check | Threshold |
 |---|---|
-| F1-macro | ≥ 0.40 |
+| F1-macro (absolute) | ≥ 0.40 |
 | MCC | ≥ 0.10 |
 | Hit rate | ≥ 0.52 |
 | Max signal class share | ≤ 70% |
+| F1-macro delta over baseline | ≥ 0.02 |
 
-If the gate fails, the `retraining_required` flag stays set in `data/monitoring/status.json` and training is re-attempted on the next nightly run.
+If the gate fails, the `retraining_required` flag stays set in `data/monitoring/status.json` and training is re-attempted on the next nightly run. The server is **not** reloaded on a gate failure — the previous production artifact continues serving.
 
 ---
 

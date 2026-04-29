@@ -162,6 +162,35 @@ make train       # Re-run training on existing data/features/
 make notebook    # Launch Jupyter for EDA
 ```
 
+### Tuning the walk-forward harness
+
+The training harness is configured via `configs/training.yaml`:
+
+```yaml
+walk_forward:
+  train_window: 120   # trading days per fold (120 ≈ 6 months)
+  step_size: 20       # trading days between fold starts
+  min_folds: 3        # abort if fewer folds are available
+```
+
+**Key trade-off:** a shorter `train_window` fits recent market regime tighter (better in-sample generalisation on a small universe) but increases variance. A longer window sees more history but can degrade when the model trains on stale patterns.
+
+Empirically, `train_window=120 / step_size=20` outperforms `252/21` on this 15-ticker universe (F1 0.42 vs 0.37). If you add more tickers or backfill more history, try larger values.
+
+To retrain immediately with the current config:
+
+```bash
+make train
+```
+
+To retrain and force-evaluate against the quality gate:
+
+```bash
+make nightly START_DATE=<YYYY-MM-DD>
+# or with --force-retrain to bypass the 21-day cadence check:
+.venv/bin/python scripts/run_nightly.py --force-retrain
+```
+
 ### Project structure
 
 ```
@@ -169,7 +198,7 @@ src/
 ├── ingestion/      — Massive OHLCV + Polygon news sentiment (FinBERT-scored), rate limiter, pipeline
 ├── preprocessing/  — Imputation, outlier detection, normalisation, merger
 ├── features/       — Returns, trend, volume, lags, seasonality, target label
-├── models/         — Walk-forward harness, N-HiTS/Autoformer wrappers
+├── models/         — Walk-forward harness, LightGBM + naive baseline
 ├── evaluation/     — Classification metrics, financial metrics, quality gate, SHAP
 ├── serving/        — FastAPI app, auth, artifact loader, inference engine
 └── monitoring/     — Feature drift, prediction drift, degradation, retraining trigger
@@ -179,7 +208,12 @@ tests/
 ├── integration/    — Pipeline-level tests
 └── acceptance/     — Spec-level behaviour tests
 
-configs/            — YAML configs for all pipeline stages (incl. fixed_universe list)
+configs/
+├── training.yaml       — Walk-forward harness settings (train_window, step_size)
+├── ingestion.yaml      — Polygon rate limits, fixed universe ticker list
+├── evaluation.yaml     — Quality gate thresholds (F1, MCC, hit rate)
+├── monitoring.yaml     — Drift detection thresholds
+└── models/             — Per-model hyperparameters (lightgbm.yaml)
 scripts/            — CLI entry points and launchd plist
 specs/              — Spec-driven design documents (01–07)
 notebooks/          — EDA: universe_selection, sentiment_exploration, yfinance_exploration

@@ -1,6 +1,6 @@
 walk_forward:
-  train_window: 252       # trading days
-  step_size: 21           # trading days
+  train_window: 120       # trading days per fold; 120 ≈ 6 months — tighter window
+  step_size: 20           # trading days between fold starts
   min_folds: 3            # abort if fewer folds available
 
 data:

@@ -8,21 +8,40 @@ from pathlib import Path
 import pandas as pd
 
 from src.features.audit import lookahead_bias_guard, null_audit
-from src.features.lags import compute_lag_features
+from src.features.lags import compute_log_return_lags
 from src.features.returns import compute_forward_return, compute_log_returns
 from src.features.schema import FeatureRecord
 from src.features.seasonality import compute_seasonality_features
 from src.features.sentiment import passthrough_sentiment
 from src.features.target import compute_target_label
-from src.features.trend import compute_close_to_sma, compute_ema, compute_macd, compute_sma
-from src.features.volume import compute_obv, compute_vwap_ratio
+from src.features.trend import (
+    compute_close_to_ma_ratios,
+    compute_ema,
+    compute_macd,
+    compute_macd_normalised,
+    compute_sma,
+)
+from src.features.volatility import (
+    compute_atr,
+    compute_momentum,
+    compute_realised_volatility,
+    compute_return_zscore,
+)
+from src.features.volume import (
+    compute_obv,
+    compute_obv_pct_change,
+    compute_volume_log_ratio,
+    compute_vwap_ratio,
+)
 from src.ingestion.persistence import write_json
 
 logger = logging.getLogger(__name__)
 
 _PROCESSED_DIR = Path("data/processed")
 _FEATURES_DIR = Path("data/features")
-_WARMUP_ROWS = 26  # minimum rows to produce valid MACD(26)
+# Longest rolling window in the feature set is 60 (log_return_zscore_60).
+# Drop this many warmup rows per ticker — earlier rows are structurally incomplete.
+_WARMUP_ROWS = 60
 
 
 class FeaturePipeline:
@@ -68,7 +87,9 @@ class FeaturePipeline:
                 "completed_at": completed_at.isoformat(),
             },
         )
-        logger.info("feature pipeline complete: %d processed, %d skipped", processed, skipped)
+        logger.info(
+            "feature pipeline complete: %d processed, %d skipped", processed, skipped
+        )
 
     # ------------------------------------------------------------------
 
@@ -86,7 +107,9 @@ class FeaturePipeline:
     def _process_ticker(self, ticker: str, run_date: date) -> dict | None:
         dest = self._features_dir / ticker / f"{run_date}.csv"
         if dest.exists():
-            logger.debug("features already exist for %s %s, skipping", ticker, run_date)
+            logger.debug(
+                "features already exist for %s %s, skipping", ticker, run_date
+            )
             return {"warmup_dropped": 0, "targets": []}
 
         processed_path = self._processed_dir / ticker / f"{run_date}.csv"
@@ -98,6 +121,7 @@ class FeaturePipeline:
         if df.empty:
             return None
 
+        rows_before_warmup = len(df)
         df = self._compute_all_features(df)
         df = self._drop_warmup(df, ticker)
         null_audit(df, ticker)
@@ -109,26 +133,36 @@ class FeaturePipeline:
 
         self._write_features(dest, valid_rows)
         targets = [r.target for r in valid_rows if r.target]
-        return {"warmup_dropped": max(0, len(df) + _WARMUP_ROWS - len(df)), "targets": targets}
+        return {
+            "warmup_dropped": min(_WARMUP_ROWS, rows_before_warmup),
+            "targets": targets,
+        }
 
     def _compute_all_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        # Returns layer
         df = compute_log_returns(df)
         df = compute_forward_return(df)
+        df = compute_log_return_lags(df)
+        df = compute_return_zscore(df)
+        # Volatility / momentum / ATR
+        df = compute_realised_volatility(df)
+        df = compute_momentum(df)
+        df = compute_atr(df)
+        # Trend — compute intermediates first, then derived ratios
         df = compute_sma(df)
         df = compute_ema(df)
         df = compute_macd(df)
-        df = compute_close_to_sma(df)
+        df = compute_close_to_ma_ratios(df)
+        df = compute_macd_normalised(df)
+        # Volume — cumulative OBV is intermediate, derive pct-change
         df = compute_obv(df)
+        df = compute_obv_pct_change(df)
+        df = compute_volume_log_ratio(df)
         df = compute_vwap_ratio(df)
-        df = compute_lag_features(df)
+        # Calendar (cyclic) and sentiment passthrough
         df = compute_seasonality_features(df)
         df = passthrough_sentiment(df)
-
-        # Add lag for log_return
-        df["log_return_lag1"] = df["log_return"].shift(1)
-        df["log_return_lag2"] = df["log_return"].shift(2)
-        df["log_return_lag3"] = df["log_return"].shift(3)
-
+        # Target last — drops rows with insufficient history
         df = compute_target_label(df)
         return df
 
@@ -138,16 +172,24 @@ class FeaturePipeline:
         logger.debug("dropped %d warmup rows for %s", before - len(df), ticker)
         return df
 
-    def _validate_rows(self, df: pd.DataFrame, ticker: str) -> list[FeatureRecord]:
+    def _validate_rows(
+        self, df: pd.DataFrame, ticker: str
+    ) -> list[FeatureRecord]:
         valid: list[FeatureRecord] = []
         for _, row in df.iterrows():
             try:
-                valid.append(FeatureRecord(**{k: v for k, v in row.items() if not _is_nan(v)}))
+                valid.append(
+                    FeatureRecord(
+                        **{k: v for k, v in row.items() if not _is_nan(v)}
+                    )
+                )
             except Exception as exc:
                 logger.error("feature row validation failed for %s: %s", ticker, exc)
         return valid
 
-    def _write_features(self, dest: Path, records: list[FeatureRecord]) -> None:
+    def _write_features(
+        self, dest: Path, records: list[FeatureRecord]
+    ) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         rows = [r.model_dump() for r in records]
         if not rows:
@@ -162,11 +204,15 @@ def _distribution(targets: list[str]) -> dict[str, float]:
     if not targets:
         return {}
     total = len(targets)
-    return {label: round(targets.count(label) / total, 3) for label in ["BUY", "HOLD", "SELL"]}
+    return {
+        label: round(targets.count(label) / total, 3)
+        for label in ["BUY", "HOLD", "SELL"]
+    }
 
 
 def _is_nan(v) -> bool:
     import math
+
     try:
         return math.isnan(v)
     except (TypeError, ValueError):

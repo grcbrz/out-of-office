@@ -9,13 +9,16 @@ from src.features.schema import FEATURE_COLUMNS
 logger = logging.getLogger(__name__)
 
 _CORE_FEATURES = [
-    "log_return", "sma_10", "sma_20", "ema_10", "ema_20",
-    "macd", "macd_signal", "macd_hist", "obv",
-    "close_lag1", "close_lag2", "close_lag3",
-    "day_of_week", "week_of_year", "month",
+    "log_return", "log_return_lag1", "log_return_lag2", "log_return_lag3",
+    "log_return_zscore_60", "realised_vol_20", "momentum_20", "atr_14",
+    "close_to_sma_10", "close_to_sma_20", "close_to_ema_10", "close_to_ema_20",
+    "macd_norm", "macd_signal_norm", "macd_hist_norm",
+    "obv_pct_change_20", "volume_log_ratio_20",
+    "dow_sin", "dow_cos", "month_sin", "month_cos",
 ]
 _NULLABLE_FEATURES = {"vwap_ratio", "bullish_percent", "bearish_percent",
-                      "company_news_score", "article_count"}
+                      "company_news_score", "article_count",
+                      "positive_insights", "negative_insights", "neutral_insights"}
 
 
 class LookaheadBiasError(Exception):

@@ -40,10 +40,12 @@ _MIN_FOLDS = 3
 
 _INT_TO_LABEL = {0: "SELL", 1: "HOLD", 2: "BUY"}
 
-# Production candidates trained per fold. v1 ships with a single candidate
-# (LightGBM). Add real neuralforecast architectures here as they land — the
-# harness already supports N candidates and selects on F1-macro.
-_CANDIDATE_NAMES: tuple[str, ...] = ("lightgbm",)
+# Production candidates trained per fold. Currently:
+#   * lightgbm     — gradient-boosted trees
+#   * randomforest — bagged trees (uncorrelated failure modes vs boosting)
+# Add real neuralforecast architectures here as they land — the harness
+# already supports N candidates and selects on F1-macro.
+_CANDIDATE_NAMES: tuple[str, ...] = ("lightgbm", "randomforest")
 _BASELINE_NAME = "baseline_last_direction"
 
 
@@ -359,6 +361,11 @@ def _instantiate_wrapper(model_name: str, config: dict):
         config['num_threads'] = 1
         config['verbosity'] = -1  # Reduce output
         return LightGBMWrapper(config)
+    if model_name == "randomforest":
+        from src.models.architectures.randomforest import RandomForestWrapper
+        config = config.copy() if config else {}
+        config['n_jobs'] = 1
+        return RandomForestWrapper(config)
     if model_name == _BASELINE_NAME:
         from src.models.architectures.baseline import BaselineLastDirectionWrapper
         return BaselineLastDirectionWrapper(config)

@@ -5,10 +5,11 @@ from typing import Any
 
 import numpy as np
 
-# Tie-breaking preference: simpler / cheaper architectures first. v1 ships with
-# only LightGBM but the slot is preserved so adding a real neuralforecast
-# candidate later doesn't mean rewiring the selector.
-_PREFERENCE_ORDER = ["lightgbm"]
+# Tie-breaking preference among candidates with equal F1-macro. Order the list
+# from most-preferred to least-preferred. LightGBM first because boosting tends
+# to be more sample-efficient than bagging on tabular daily-equity data and
+# trains faster per iteration; RandomForest second as the diversity candidate.
+_PREFERENCE_ORDER = ["lightgbm", "randomforest"]
 # Names that must never be selected as production winners — they exist only as
 # benchmarks for the quality gate.
 _BASELINE_NAMES = frozenset({"baseline_last_direction"})

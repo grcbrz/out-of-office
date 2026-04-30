@@ -120,15 +120,18 @@ Target distribution is approximately 30/40/30 (BUY/HOLD/SELL). Apply class weigh
 > **History.** Earlier drafts of this spec listed three candidate transformers
 > (N-HiTS, PatchTST, Autoformer) sourced from `neuralforecast`. The shipped
 > implementations were sklearn placeholders under transformer-flavoured names —
-> a mismatch between spec and code. v1 corrects that by shipping a single,
-> truthfully-named candidate. Real neuralforecast architectures are deferred
+> a mismatch between spec and code. v1 corrected that by shipping a single,
+> truthfully-named gradient-boosted candidate. v1.1 adds RandomForest as a
+> diversity candidate. Real neuralforecast architectures remain deferred
 > until daily 3-class equity classification with ~12k training rows produces
-> evidence that transformers outperform gradient-boosted trees here, which is
-> not the empirical default on this scale of data.
+> evidence that transformers outperform tree ensembles here, which is not
+> the empirical default on this scale of data.
 
-> **Mandatory naive baseline.** Every fold trains a `BaselineLastDirectionWrapper` alongside the candidate (Spec 05 §4.2). The baseline is **never** a production candidate — `select_winner` filters it out — but its F1-macro is logged per fold and aggregated, and the quality gate (Spec 05 §4.2) requires the production model to beat it by `min_delta_over_baseline` F1 points. Without this benchmark there is no answer to "did the model add anything over the trivial rule?".
+> **Mandatory naive baseline.** Every fold trains a `BaselineLastDirectionWrapper` alongside the candidates (Spec 05 §4.2). The baseline is **never** a production candidate — `select_winner` filters it out — but its F1-macro is logged per fold and aggregated, and the quality gate (Spec 05 §4.2) requires the production model to beat it by `min_delta_over_baseline` F1 points. Without this benchmark there is no answer to "did the model add anything over the trivial rule?".
 
-### 6.1 LightGBM (v1 production candidate)
+> **Why two tree candidates?** LightGBM (boosting) and RandomForest (bagging) have uncorrelated failure modes: boosting overfits sequential noise on choppy folds; bagging averages noise away but lags steep regime changes. Per-fold selection picks the better of the two; aggregate selection picks the model with the highest mean F1 across folds.
+
+### 6.1 LightGBM (production candidate, primary)
 
 - Multi-class gradient-boosted trees (`lightgbm.LGBMClassifier`)
 - Robust to mixed-scale features; cyclic calendar encodings handled natively without scaling
@@ -160,7 +163,26 @@ Hardcoded inside the wrapper (not configurable):
 | `num_class` | `3` | Pipeline emits exactly 3 targets |
 | `metric` | `multi_logloss` | Tracks the training objective |
 
-### 6.2 Adding additional candidates
+### 6.2 RandomForest (production candidate, diversity)
+
+- Bagged trees (`sklearn.ensemble.RandomForestClassifier`)
+- **Class imbalance contract differs from LightGBM:** `class_weight={class_id: weight}` is passed at *construction*, not at fit time. RandomForest's bootstrap sampling reweights draws correctly only when class_weight is set on the constructor; passing weights as `sample_weight` at fit would interact with the bootstrap and double-up minority-class influence.
+- SHAP via `shap.TreeExplainer` — same path as LightGBM
+- Config key: `models.randomforest`
+
+```yaml
+# configs/models/randomforest.yaml
+n_estimators: 400
+max_depth: null            # let trees grow; rely on min_samples_leaf for regularisation
+min_samples_leaf: 5
+min_samples_split: 10
+max_features: sqrt         # ~sqrt(30) ≈ 5 features per split
+bootstrap: true
+n_jobs: 1                  # determinism — matches LightGBM thread pinning
+random_seed: 42
+```
+
+### 6.3 Adding additional candidates
 
 The harness iterates `_CANDIDATE_NAMES` in `src/models/training_pipeline.py` and selects on F1-macro. To add a candidate (e.g. a real `neuralforecast` Autoformer):
 
@@ -228,7 +250,7 @@ The τ that produces the highest validation Sharpe wins (ties broken by preferri
 
 **Metric:** F1-macro on validation fold (equal weight across BUY, HOLD, SELL classes)
 
-**Tie-breaking:** order defined by `_PREFERENCE_ORDER` in `src/models/selector.py` (v1: `["lightgbm"]`; later candidates appended in preferred order).
+**Tie-breaking:** order defined by `_PREFERENCE_ORDER` in `src/models/selector.py` (currently `["lightgbm", "randomforest"]` — boosting preferred over bagging on equal F1 because it tends to be more sample-efficient on tabular daily-equity data and trains faster).
 
 **Winner logged** with tag `production=true` in MLflow. Every run is logged, including the baseline.
 
@@ -307,7 +329,8 @@ src/models/
 ├── architectures/
 │   ├── __init__.py
 │   ├── base.py             # BaseModelWrapper — train/predict/predict_proba/save/load contract
-│   ├── lightgbm.py         # LightGBMWrapper — v1 production candidate
+│   ├── lightgbm.py         # LightGBMWrapper — primary production candidate (boosting)
+│   ├── randomforest.py     # RandomForestWrapper — diversity production candidate (bagging)
 │   └── baseline.py         # BaselineLastDirectionWrapper — naive benchmark (Spec 05 §4.2)
 ├── harness.py              # generate_folds — walk-forward fold construction
 ├── selector.py             # ModelResult, select_winner — F1-macro comparison, tie-breaking
@@ -350,10 +373,13 @@ src/models/
 | `test_ticker_encoding_stable` | Unit | Re-encoding same tickers produces same IDs |
 | `test_ticker_encoding_append` | Unit | New ticker gets new ID; existing IDs unchanged |
 | `test_model_selection_f1_macro` | Unit | Higher F1-macro wins among candidates |
-| `test_model_selection_tiebreak_prefers_lightgbm` | Unit | Equal F1 → preference order respected |
+| `test_model_selection_tiebreak_prefers_lightgbm` | Unit | Equal F1 → preference order respected (lightgbm > randomforest) |
 | `test_select_winner_excludes_baseline` | Unit | Baseline never returned as production winner |
 | `test_lightgbm_wrapper_train_predict_roundtrip` | Unit | Fit on synthetic data; predict + predict_proba return correct shapes |
 | `test_lightgbm_wrapper_class_weights_applied` | Unit | sample_weight passed to `model.fit` reflects per-class weights |
+| `test_randomforest_wrapper_train_predict_roundtrip` | Unit | Fit on synthetic data; predict + predict_proba return correct shapes |
+| `test_randomforest_class_weight_passed_to_constructor` | Unit | `class_weight` reaches `RandomForestClassifier(...)` at __init__, not at fit |
+| `test_randomforest_string_class_weight_keys_coerced_to_int` | Unit | JSON-stringified keys (`{"0": ...}`) are coerced before reaching sklearn |
 | `test_apply_confidence_threshold` | Unit | Predictions with `max(proba) ≤ τ` demoted to HOLD; others unchanged |
 | `test_calibrate_threshold_picks_sharpe_max` | Unit | Synthetic proba + log-return series; calibrator returns the τ with the best Sharpe |
 | `test_calibrate_threshold_lowest_tau_on_tie` | Unit | When two τ produce equal Sharpe the lower one is returned (more trades) |

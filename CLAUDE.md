@@ -44,7 +44,7 @@ stocks-recommender/
 │   ├── ingestion/          # Data acquisition — Polygon.io (OHLCV, news) + FinBERT sentiment scoring
 │   ├── preprocessing/      # Cleaning, validation, normalisation
 │   ├── features/           # Feature engineering pipelines
-│   ├── models/             # Model definitions (LightGBM v1 candidate, naive baseline)
+│   ├── models/             # Model definitions (LightGBM + RandomForest candidates, naive baseline)
 │   ├── evaluation/         # Metrics, explainability, reporting
 │   ├── serving/            # API / dashboard / inference endpoint
 │   └── monitoring/         # Drift detection, retraining triggers
@@ -136,10 +136,12 @@ stocks-recommender/
 
 - Always benchmark against at least one naive baseline (`BaselineLastDirectionWrapper` ships with v1)
 - Document justification for chosen architecture in the relevant spec
-- Candidate models in scope (v1):
+- Candidate models in scope (current):
   1. Baseline last-direction — mandatory reference point (Spec 05 §4.2 quality gate)
-  2. LightGBM (`lightgbm.LGBMClassifier`) — v1 production candidate (Spec 04 §6.1)
+  2. LightGBM (`lightgbm.LGBMClassifier`) — production candidate, primary (Spec 04 §6.1)
+  3. RandomForest (`sklearn.ensemble.RandomForestClassifier`) — production candidate, diversity (Spec 04 §6.2)
 
+- **Diversity rationale:** boosting (LightGBM) and bagging (RandomForest) have uncorrelated failure modes — boosting overfits sequential noise; bagging lags steep regime changes. Per-fold selection picks whichever wins; aggregate selection picks the higher mean F1 across folds.
 - **Deferred until evidence justifies them:** real `neuralforecast` Autoformer / N-HiTS / PatchTST. The earlier draft of Spec 04 promised these but shipped sklearn placeholders under their names — that mismatch is the root cause we are correcting.
 
 > Seasonality must always be accounted for. Decompose series (trend + seasonal + residual) before modelling. Use STL or model-native decomposition where available. Validate seasonal periods empirically — do not assume.

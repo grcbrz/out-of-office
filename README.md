@@ -12,7 +12,7 @@ scripts/run_nightly.py
 ├── Preprocessing    — cleaning, imputation, outlier detection
 ├── Feature Eng.     — log returns, MACD, OBV, VWAP, lags, seasonality
 ├── Monitoring       — feature drift (KS+PSI), prediction drift, hit-rate degradation
-├── Training         — walk-forward harness; LightGBM vs naive baseline
+├── Training         — walk-forward harness; LightGBM + RandomForest vs naive baseline
 ├── Evaluation       — F1-macro, MCC, Sharpe, confidence threshold calibration, quality gate
 └── Prediction       — POST /predict via internal HTTP client (server auto-reloads after training)
 ```
@@ -217,7 +217,7 @@ configs/
 ├── ingestion.yaml      — Polygon rate limits, fixed universe ticker list
 ├── evaluation.yaml     — Quality gate thresholds (F1, MCC, hit rate)
 ├── monitoring.yaml     — Drift detection thresholds
-└── models/             — Per-model hyperparameters (lightgbm.yaml)
+└── models/             — Per-model hyperparameters (lightgbm.yaml, randomforest.yaml)
 scripts/            — CLI entry points and launchd plist
 specs/              — Spec-driven design documents (01–07)
 notebooks/          — EDA: universe_selection, sentiment_exploration, yfinance_exploration
@@ -256,14 +256,15 @@ FinBERT (`transformers`, `torch`) loads once at ingestion startup (~5–10 s fro
 
 ## Models
 
-Each nightly training run evaluates **LightGBM** against a **naive last-direction baseline** using walk-forward cross-validation (configurable via `configs/training.yaml`; default 120-day train window, 20-day step, minimum 3 folds). LightGBM is the sole production candidate — the baseline exists only as a quality floor that the production model must beat.
+Each nightly training run evaluates two production candidates against a **naive last-direction baseline** using walk-forward cross-validation (configurable via `configs/training.yaml`; default 120-day train window, 20-day step, minimum 3 folds).
 
 | Role | Implementation | Notes |
 |---|---|---|
-| **Production candidate** | `lightgbm.LGBMClassifier` | Multi-class (SELL/HOLD/BUY); exact SHAP via TreeExplainer; handles mixed-scale features natively |
+| **Candidate 1** | `lightgbm.LGBMClassifier` | Gradient-boosted trees; exact SHAP via TreeExplainer; sample-efficient on tabular daily data |
+| **Candidate 2** | `sklearn.RandomForestClassifier` | Bagged trees; uncorrelated failure modes vs boosting; class weights applied at construction |
 | **Naive baseline** | Last-direction rule (percentile thresholds on `log_return_lag1`) | Never promoted to production; sets the minimum acceptable F1 delta |
 
-The production model is selected by **mean F1-macro across all folds**, written to `models/production/lightgbm/`, and previous artifacts are evicted automatically.
+The winner is selected by **mean F1-macro across all folds**. Ties are broken by preference order: LightGBM → RandomForest. The winning artifact is written to `models/production/<model_name>/` and previous artifacts are evicted automatically.
 
 ### Confidence thresholding
 

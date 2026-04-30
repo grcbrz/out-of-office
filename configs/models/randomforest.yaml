@@ -1,0 +1,12 @@
+# RandomForest hyperparameters. Defaults live in
+# src/models/architectures/randomforest.py — values here override them.
+# Tune via experiment tracking; do not hardcode in source.
+
+n_estimators: 400
+max_depth: null            # let trees grow; rely on min_samples_leaf for regularisation
+min_samples_leaf: 5
+min_samples_split: 10
+max_features: sqrt         # ~sqrt(30) ≈ 5 features per split
+bootstrap: true
+n_jobs: 1                  # determinism — matches LightGBM thread pinning
+random_seed: 42

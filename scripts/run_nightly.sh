@@ -2,7 +2,7 @@
 # Wrapper so launchd can load .env before running the nightly pipeline.
 set -euo pipefail
 
-REPO="/Users/gracebraz/code/grcbrz/out-of-office"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 
 # Load secrets — launchd does not inherit shell environment

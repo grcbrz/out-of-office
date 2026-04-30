@@ -15,9 +15,11 @@ import pytest
 from src.features.schema import FEATURE_COLUMNS
 from src.models.architectures.baseline import BaselineLastDirectionWrapper
 from src.models.architectures.lightgbm import LightGBMWrapper
+from src.models.architectures.randomforest import RandomForestWrapper
 
 _WRAPPERS = [
     ("lightgbm", LightGBMWrapper),
+    ("randomforest", RandomForestWrapper),
     ("baseline_last_direction", BaselineLastDirectionWrapper),
 ]
 

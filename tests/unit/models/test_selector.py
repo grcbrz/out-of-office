@@ -16,13 +16,39 @@ def test_model_selection_f1_macro():
 
 
 def test_model_selection_tiebreak_prefers_lightgbm():
-    """Equal F1 → preference order respected."""
+    """Equal F1 → preference order respected (lightgbm beats unknown name)."""
     results = [
         ModelResult("future_transformer", 0.40),
         ModelResult("lightgbm", 0.40),
     ]
     winner = select_winner(results)
     assert winner.model_name == "lightgbm"
+
+
+def test_tiebreak_prefers_lightgbm_over_randomforest():
+    """Equal F1 between the two production candidates → lightgbm wins.
+
+    Locks the contract documented in Spec 04 §6 and `_PREFERENCE_ORDER`:
+    boosting preferred over bagging when neither has a measurable F1 edge,
+    because LightGBM trains faster and tends to be more sample-efficient on
+    tabular daily-equity data.
+    """
+    results = [
+        ModelResult("randomforest", 0.40),
+        ModelResult("lightgbm", 0.40),
+    ]
+    winner = select_winner(results)
+    assert winner.model_name == "lightgbm"
+
+
+def test_randomforest_wins_when_strictly_higher_f1():
+    """The preference is a tie-break only — strict F1 advantage always wins."""
+    results = [
+        ModelResult("lightgbm", 0.40),
+        ModelResult("randomforest", 0.42),
+    ]
+    winner = select_winner(results)
+    assert winner.model_name == "randomforest"
 
 
 def test_select_winner_single():

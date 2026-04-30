@@ -64,6 +64,12 @@ def test_load_model_config_reads_yaml(tmp_path, monkeypatch):
     "name,prefix",
     [
         ("lightgbm", "lightgbm"),
+        # RandomForestWrapper is dormant in PR 1: not in _CANDIDATE_NAMES so
+        # it is never trained on production folds, but _instantiate_wrapper
+        # already routes the name. The PR 2 activation flips the candidate
+        # tuple; this test ensures the routing works the moment that flip
+        # lands so PR 2 stays mechanical.
+        ("randomforest", "randomforest"),
         (_BASELINE_NAME, "baseline"),
     ],
 )

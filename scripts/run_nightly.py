@@ -182,8 +182,29 @@ def _run_monitoring(run_date: date) -> None:
     cur_end = run_date
     cur_start = run_date - timedelta(days=_CURRENT_WINDOW_DAYS * 2)  # calendar slack for ~21 trading days
 
-    reference_stats = load_feature_window(_FEATURES_DIR, ref_start, ref_end, CONTINUOUS_FEATURE_COLUMNS)
-    current_stats = load_feature_window(_FEATURES_DIR, cur_start, cur_end, CONTINUOUS_FEATURE_COLUMNS)
+    # Detect universe change: if the saved reference tickers differ from the
+    # current fixed_universe, drift stats are meaningless (different companies).
+    # Skip feature/prediction drift and let cadence-based retraining handle it.
+    universe_changed = False
+    ref_tickers = reference.get("tickers")
+    if ref_tickers is not None:
+        import yaml as _yaml
+        _ing_cfg = _yaml.safe_load(Path("configs/ingestion.yaml").read_text())
+        current_tickers = sorted(_ing_cfg.get("fixed_universe") or [])
+        if sorted(ref_tickers) != current_tickers:
+            logger.warning(
+                "universe changed (reference has %d tickers, current has %d) — "
+                "skipping drift detection this run; will reset after next successful training",
+                len(ref_tickers), len(current_tickers),
+            )
+            universe_changed = True
+
+    if universe_changed:
+        reference_stats: dict = {}
+        current_stats: dict = {}
+    else:
+        reference_stats = load_feature_window(_FEATURES_DIR, ref_start, ref_end, CONTINUOUS_FEATURE_COLUMNS)
+        current_stats = load_feature_window(_FEATURES_DIR, cur_start, cur_end, CONTINUOUS_FEATURE_COLUMNS)
 
     predictions_df = _load_recent_predictions(run_date, _CURRENT_WINDOW_DAYS)
     current_signal_counts = _signal_counts(predictions_df)
@@ -203,7 +224,7 @@ def _run_monitoring(run_date: date) -> None:
         run_date=run_date,
         reference_feature_stats=reference_stats,
         current_feature_stats=current_stats,
-        reference_signal_counts=reference["signal_counts"],
+        reference_signal_counts={} if universe_changed else reference["signal_counts"],
         current_signal_counts=current_signal_counts,
         predictions_df=predictions_df,
         ohlcv_df=ohlcv_df,

@@ -72,11 +72,14 @@ def save_monitoring_reference(
     training_start: date,
     training_end: date,
     signal_counts: dict[str, int],
+    tickers: list[str] | None = None,
 ) -> None:
     """Persist the reference window pointer used by MonitoringPipeline.
 
-    Stores only dates + signal counts — feature distributions are recomputed
-    from data/features/ at monitoring time to avoid duplicating raw data.
+    Stores dates, signal counts, and the ticker universe used during training.
+    Feature distributions are recomputed from data/features/ at monitoring time
+    to avoid duplicating raw data. The ticker list lets the monitoring pipeline
+    detect universe changes and skip drift detection when appropriate.
     """
     path = Path(artifact_dir) / "monitoring_reference.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,6 +87,7 @@ def save_monitoring_reference(
         "training_start_date": str(training_start),
         "training_end_date": str(training_end),
         "signal_counts": {k: int(v) for k, v in signal_counts.items()},
+        "tickers": sorted(tickers) if tickers is not None else None,
     }
     path.write_text(json.dumps(payload, indent=2))
 

@@ -220,6 +220,7 @@ class TrainingPipeline:
                     "HOLD": final_metrics.get("hold_count", 0),
                     "SELL": final_metrics.get("sell_count", 0),
                 },
+                tickers=sorted(final_preparer._ticker_map.keys()),
             )
 
             try:

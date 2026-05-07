@@ -36,8 +36,14 @@ def compute_target_label(df: pd.DataFrame) -> pd.DataFrame:
 
     df["target"] = [_label(i) for i in range(len(df))]
 
-    # Drop rows with insufficient history (percentiles are NaN) or no forward_return
+    # Drop rows whose target is None due to *insufficient rolling history*
+    # (forward_return exists but percentiles are NaN — early rows).
+    # Keep the final row where forward_return itself is NaN: that row has no
+    # future price yet and cannot be labelled, but it carries today's features
+    # (including sentiment) and is used as the inference input by the server.
+    # Training code already skips it via the y_train.notna() mask in base.py.
+    insufficient_history = df["target"].isna() & df["forward_return"].notna()
     before = len(df)
-    df = df[df["target"].notna()].reset_index(drop=True)
-    logger.debug("target computation dropped %d rows", before - len(df))
+    df = df[~insufficient_history].reset_index(drop=True)
+    logger.debug("target computation dropped %d rows with insufficient history", insufficient_history.sum())
     return df

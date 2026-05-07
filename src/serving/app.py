@@ -21,6 +21,19 @@ logger = logging.getLogger(__name__)
 _loader = ArtifactLoader()
 _metrics = MetricsStore()
 _FEATURES_DIR = Path("data/features")
+_INGESTION_CONFIG = Path("configs/ingestion.yaml")
+
+
+def _load_fixed_universe() -> list[str]:
+    """Return the fixed_universe from configs/ingestion.yaml, or [] if not set."""
+    try:
+        import yaml
+        with _INGESTION_CONFIG.open() as f:
+            cfg = yaml.safe_load(f) or {}
+        return list(cfg.get("fixed_universe") or [])
+    except Exception as exc:
+        logger.warning("could not load fixed_universe from config: %s", exc)
+        return []
 
 
 def _load_feature_row(ticker: str, run_date: dt.date) -> pd.Series | None:
@@ -83,7 +96,13 @@ def predict(request: PredictRequest, _: str = Depends(require_auth)):
         raise HTTPException(status_code=503, detail="no production model loaded")
 
     run_date = request.predict_date or dt.date.today()
-    tickers = request.tickers or list(_loader.ticker_map.keys())
+    # Default to fixed_universe from config, not ticker_map — the ticker_map
+    # contains every ticker ever seen during training and grows stale as the
+    # universe evolves. fixed_universe is the authoritative current list.
+    if request.tickers:
+        tickers = request.tickers
+    else:
+        tickers = _load_fixed_universe() or list(_loader.ticker_map.keys())
 
     unknown = [t for t in tickers if t not in _loader.ticker_map]
     if unknown:

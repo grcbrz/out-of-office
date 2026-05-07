@@ -68,11 +68,12 @@ app = FastAPI(title="OOO API", lifespan=lifespan)
 def health(_: str = Depends(require_auth)):
     if not _loader.is_loaded:
         raise HTTPException(status_code=503, detail={"status": "degraded", "reason": "no model loaded"})
+    prod_fold = _loader.metadata.get("production_fold") or {}
     return {
         "status": "ok",
         "model": _loader.model_name,
-        "model_date": _loader.metadata.get("fold_end_date"),
-        "production_fold_f1_macro": _loader.metadata.get("f1_macro"),
+        "production_fold": prod_fold.get("fold"),
+        "production_fold_f1_macro": prod_fold.get("f1_macro"),
         "quality_gate_passed": _loader.metadata.get("quality_gate_passed", True),
     }
 

@@ -56,6 +56,7 @@ class EvaluationPipeline:
 
         passed, failure_msg = self._evaluate_gate(production_metrics)
         self._write_gate_result(date_dir, production_metrics, passed, failure_msg)
+        self._patch_artifact_metadata({"quality_gate_passed": passed})
 
         log_to_mlflow(
             run_params={
@@ -108,6 +109,21 @@ class EvaluationPipeline:
             max_signal_concentration=gates.get("max_signal_concentration", 0.80),
             min_delta_over_baseline=gates.get("min_delta_over_baseline", 0.02),
         )
+
+    def _patch_artifact_metadata(self, patch: dict) -> None:
+        """Merge patch into the production artifact's metadata.json in-place."""
+        model_dirs = sorted(
+            [p for p in self._production_dir.iterdir() if p.is_dir()],
+            key=lambda p: p.stat().st_mtime, reverse=True,
+        )
+        if not model_dirs:
+            return
+        metadata_path = model_dirs[0] / "metadata.json"
+        if not metadata_path.exists():
+            return
+        meta = json.loads(metadata_path.read_text())
+        meta.update(patch)
+        metadata_path.write_text(json.dumps(meta, indent=2, default=str))
 
     @staticmethod
     def _write_gate_result(

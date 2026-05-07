@@ -29,22 +29,37 @@ class Fold:
 def validate_features(df: pd.DataFrame, target_cols: Optional[list] = None) -> pd.DataFrame:
     """Validate and clean feature DataFrame to prevent NaN warnings.
 
-    Args:
-        df: Input DataFrame
-        target_cols: List of target column names to check for NaNs
+    Column dropping is restricted to columns that are NOT in FEATURE_COLUMNS.
+    Expected feature columns — including sentiment value columns that are
+    legitimately sparse early in data collection — are always preserved so
+    that fit_imputation() can handle them correctly (imputing to 0.0 when
+    an entire training fold has no sentiment data).
 
-    Returns:
-        Cleaned DataFrame
+    Dropping expected columns here caused the 7 sentiment value columns
+    (bullish_percent, bearish_percent, company_news_score, article_count,
+    positive_insights, negative_insights, neutral_insights) to be silently
+    removed from every training fold, so the model never learned to use them.
     """
     if df.empty:
         return df
 
-    # Remove columns that are all NaN
-    df = df.dropna(axis=1, how='all')
+    from src.features.schema import FEATURE_COLUMNS
+    _protected = frozenset(FEATURE_COLUMNS)
 
-    # Remove columns with >50% NaNs
-    threshold = len(df) * 0.5
-    df = df.dropna(axis=1, thresh=threshold)
+    # Drop only UNEXPECTED columns (not in FEATURE_COLUMNS) that are all NaN
+    # or mostly NaN. Never drop expected feature columns regardless of null rate.
+    unexpected_cols = [c for c in df.columns if c not in _protected]
+    if unexpected_cols:
+        unexpected_df = df[unexpected_cols]
+        threshold = len(df) * 0.5
+        cols_to_drop = [
+            c for c in unexpected_cols
+            if df[c].isna().all() or df[c].notna().sum() < threshold
+        ]
+        if cols_to_drop:
+            logger.debug("dropping %d unexpected all-null/sparse columns: %s",
+                         len(cols_to_drop), cols_to_drop)
+            df = df.drop(columns=cols_to_drop)
 
     # Remove rows with any NaN in target columns (if specified)
     if target_cols:
@@ -53,10 +68,8 @@ def validate_features(df: pd.DataFrame, target_cols: Optional[list] = None) -> p
             before_count = len(df)
             df = df.dropna(subset=existing_targets)
             if len(df) < before_count:
-                logger.warning(f"Removed {before_count - len(df)} rows with NaN in target columns")
-
-    # Forward fill remaining NaNs, then backward fill, then fill with 0
-    df = df.fillna(method='ffill').fillna(method='bfill').fillna(0)
+                logger.warning("removed %d rows with NaN in target columns",
+                                before_count - len(df))
 
     return df
 

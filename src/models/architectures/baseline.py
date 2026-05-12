@@ -53,6 +53,7 @@ class BaselineLastDirectionWrapper(BaseModelWrapper):
         X_train: pd.DataFrame,
         y_train: pd.Series,
         class_weights: dict,
+        sample_weight=None,
     ) -> None:
         if _REQUIRED_COLUMN not in X_train.columns:
             raise ValueError(

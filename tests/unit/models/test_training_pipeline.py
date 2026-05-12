@@ -218,7 +218,7 @@ def test_run_writes_artifact_and_monitoring_reference(tmp_path):
     )
 
     # Stub _train_all_models so the run completes fast and returns a baseline too.
-    def fake_train_all(self, train_df, val_df, class_weights, fold_index, artifact_dir):
+    def fake_train_all(self, train_df, val_df, class_weights, fold_index, artifact_dir, weight_half_life_days=0):
         from src.models.architectures.baseline import BaselineLastDirectionWrapper
         from src.models.architectures.lightgbm import LightGBMWrapper
 

@@ -8,16 +8,23 @@ buys uncorrelated failure modes, which is the real diversification benefit.
 Class weights
 -------------
 RandomForest takes ``class_weight={class_id: weight}`` at *construction* time.
-The internal bootstrap then reweights draws correctly. Passing the weights
-as ``sample_weight`` at fit time would interact badly with the bootstrap and
-double-up the weighting on minority classes — a subtle, well-known footgun.
-This is the primary contract difference from ``LightGBMWrapper``, which uses
-``sample_weight``.
+The internal bootstrap then reweights draws correctly.
+
+Time-decay weights
+------------------
+Temporal recency bias is applied separately as ``sample_weight`` at fit time.
+This interacts with bootstrap because each bootstrap draw is further reweighted
+by sample_weight, but that is the intended behaviour: recent samples are more
+likely to be drawn AND weighted higher within the draw. Class balancing is
+handled by construction-time class_weight; recency is handled by sample_weight.
 """
 from __future__ import annotations
 
 import logging
 from typing import Any
+
+import numpy as np
+import pandas as pd
 
 from src.models.architectures.base import BaseModelWrapper
 
@@ -64,5 +71,12 @@ class RandomForestWrapper(BaseModelWrapper):
 
         return RandomForestClassifier(**params)
 
-    # No _fit override needed — the base class default ``model.fit(X, y)`` is
-    # correct because class_weight is applied at construction, not at fit time.
+    def _fit(
+        self,
+        model: Any,
+        X: pd.DataFrame,
+        y: pd.Series,
+        class_weights: dict,
+        sample_weight: np.ndarray | None = None,
+    ) -> None:
+        model.fit(X, y, sample_weight=sample_weight)

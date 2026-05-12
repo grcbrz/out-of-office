@@ -252,6 +252,7 @@ def _build_training_pipeline():
         train_window=wf.get("train_window", 252),
         step_size=wf.get("step_size", 21),
         random_seed=tr.get("random_seed", 42),
+        weight_half_life_days=tr.get("weight_half_life_days", 0),
     )
 
 

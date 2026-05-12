@@ -67,9 +67,20 @@ class LightGBMWrapper(BaseModelWrapper):
         params["num_class"] = 3
         return LGBMClassifier(**params)
 
-    def _fit(self, model: Any, X: pd.DataFrame, y: pd.Series, class_weights: dict) -> None:
-        sample_weight = self._sample_weights(y, class_weights)
-        model.fit(X, y, sample_weight=sample_weight)
+    def _fit(
+        self,
+        model: Any,
+        X: pd.DataFrame,
+        y: pd.Series,
+        class_weights: dict,
+        sample_weight: np.ndarray | None = None,
+    ) -> None:
+        class_sw = self._sample_weights(y, class_weights)
+        if class_sw is not None and sample_weight is not None:
+            combined = class_sw * sample_weight
+        else:
+            combined = class_sw if class_sw is not None else sample_weight
+        model.fit(X, y, sample_weight=combined)
 
     @staticmethod
     def _sample_weights(y: pd.Series, class_weights: dict) -> np.ndarray | None:

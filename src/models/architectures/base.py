@@ -37,22 +37,36 @@ class BaseModelWrapper:
     def _build_model(self, class_weights: dict) -> Any:
         raise NotImplementedError
 
-    def _fit(self, model: Any, X: pd.DataFrame, y: pd.Series, class_weights: dict) -> None:
+    def _fit(
+        self,
+        model: Any,
+        X: pd.DataFrame,
+        y: pd.Series,
+        class_weights: dict,
+        sample_weight: np.ndarray | None = None,
+    ) -> None:
         model.fit(X, y)
 
     # ------------------------------------------------------------------
     # Shared implementation
     # ------------------------------------------------------------------
 
-    def train(self, X_train: pd.DataFrame, y_train: pd.Series, class_weights: dict) -> None:
+    def train(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        class_weights: dict,
+        sample_weight: np.ndarray | None = None,
+    ) -> None:
         features = [c for c in FEATURE_COLUMNS if c in X_train.columns]
         mask = y_train.notna()
         X = X_train.loc[mask, features].astype(float).fillna(0.0)
         y = y_train.loc[mask].map(TARGET_ENCODING).astype(int)
         if X.empty:
             raise ValueError(f"{self.name}: no training rows after dropping null targets")
+        sw = sample_weight[mask.values] if sample_weight is not None else None
         model = self._build_model(class_weights)
-        self._fit(model, X, y, class_weights)
+        self._fit(model, X, y, class_weights, sw)
         self._model = model
         self._features = features
         logger.info("%s training complete (%d rows, %d features)", self.name, len(X), len(features))

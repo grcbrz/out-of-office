@@ -69,15 +69,17 @@ class TrainingPipeline:
 
     def __init__(
         self,
-        train_window: int = 252, # 252 trading days = 1 year
+        train_window: int = 252,
         step_size: int = 21,
         random_seed: int = 42,
+        weight_half_life_days: int = 0,
         production_dir: Path = _PRODUCTION_DIR,
         fold_artifact_dir: Path = _FOLD_ARTIFACT_DIR,
     ) -> None:
         self._train_window = train_window
         self._step_size = step_size
         self._random_seed = random_seed
+        self._weight_half_life_days = weight_half_life_days
         self._production_dir = production_dir
         self._fold_artifact_dir = fold_artifact_dir
 
@@ -120,6 +122,7 @@ class TrainingPipeline:
 
             results = self._train_all_models(
                 train_df, val_df, class_weights, fold.index, self._fold_artifact_dir,
+                self._weight_half_life_days,
             )
             fold_winner = select_winner(results)
             baseline_result = next((r for r in results if r.is_baseline), None)
@@ -251,6 +254,7 @@ class TrainingPipeline:
         class_weights: dict,
         fold_index: int,
         artifact_dir: Path,
+        weight_half_life_days: int = 0,
     ) -> list[ModelResult]:
         """Train baseline + all candidate architectures, return their ModelResults."""
         results: list[ModelResult] = []
@@ -258,6 +262,7 @@ class TrainingPipeline:
             try:
                 result = _train_one_model(
                     name, train_df, val_df, class_weights, fold_index, artifact_dir,
+                    weight_half_life_days=weight_half_life_days,
                 )
                 logger.info("fold %d %s f1=%.3f", fold_index, name, result.f1_macro)
                 results.append(result)
@@ -406,19 +411,24 @@ def _train_one_model(
     class_weights: dict,
     fold_index: int,
     artifact_dir: Path,
+    weight_half_life_days: int = 0,
 ) -> ModelResult:
     """Train a single wrapper, evaluate on val_df, persist artifact, return ModelResult."""
     _set_global_seeds(42)
 
     config = _load_model_config(model_name)
     wrapper = _instantiate_wrapper(model_name, config)
-    # More thread limiting
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
 
-    wrapper.train(train_df, train_df["target"], class_weights)
-
     is_baseline = model_name == _BASELINE_NAME
+    if weight_half_life_days > 0 and not is_baseline:
+        from src.models.time_decay import compute_time_decay_weights
+        sample_weight = compute_time_decay_weights(train_df["date"], weight_half_life_days)
+    else:
+        sample_weight = None
+
+    wrapper.train(train_df, train_df["target"], class_weights, sample_weight=sample_weight)
 
     val_mask = val_df["target"].notna()
     if val_mask.sum() == 0:

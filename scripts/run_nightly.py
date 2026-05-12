@@ -249,7 +249,7 @@ def _build_training_pipeline():
         tr = cfg.get("training", {})
 
     return TrainingPipeline(
-        train_window=wf.get("train_window", 252),
+        train_window=wf.get("train_window", 120),
         step_size=wf.get("step_size", 21),
         random_seed=tr.get("random_seed", 42),
         weight_half_life_days=tr.get("weight_half_life_days", 0),

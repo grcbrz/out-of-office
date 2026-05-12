@@ -69,7 +69,7 @@ class TrainingPipeline:
 
     def __init__(
         self,
-        train_window: int = 252,
+        train_window: int = 120,
         step_size: int = 21,
         random_seed: int = 42,
         weight_half_life_days: int = 0,
